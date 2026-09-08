@@ -5,6 +5,7 @@
 #include <netdb.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -68,6 +69,25 @@ long rt_transport_recv(struct rt_transport *transport,
 {
     if (transport == NULL || !transport->connected || data == NULL) return -1;
     return (long)recv(transport->socket_fd, data, len, 0);
+}
+
+int rt_transport_readable(struct rt_transport *transport)
+{
+    fd_set readfds;
+    struct timeval timeout;
+    int rc;
+
+    if (transport == NULL || !transport->connected ||
+        transport->socket_fd < 0) return 0;
+
+    FD_ZERO(&readfds);
+    FD_SET(transport->socket_fd, &readfds);
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 0;
+
+    rc = select(transport->socket_fd + 1, &readfds, NULL, NULL, &timeout);
+    if (rc <= 0) return 0;
+    return FD_ISSET(transport->socket_fd, &readfds) ? 1 : 0;
 }
 
 void rt_transport_disconnect(struct rt_transport *transport)
