@@ -3,7 +3,7 @@ set -euo pipefail
 
 OUT_DIR="${1:-build/fs-uae/aros-guest}"
 SYSTEM_DIR="build/fs-uae/aros-system"
-NATIVE="build/fs-uae/native/RexxTelnet"
+NATIVE="build/fs-uae/native/RexxTelnet-m5.3a"
 mkdir -p "$OUT_DIR"
 
 fail() {
@@ -11,7 +11,7 @@ fail() {
   exit 1
 }
 
-[[ -f "$NATIVE" ]] || fail "NATIVE_BINARY_MISSING"
+[[ -f "$NATIVE" ]] || fail "M5_3A_NATIVE_BINARY_MISSING"
 
 iso="$(bash ci/fs-uae/fetch-aros-system.sh "$SYSTEM_DIR" | tail -n 1)"
 root_extract="$OUT_DIR/system-root"
@@ -31,15 +31,16 @@ rexxlib_host="$(find "$aros_root" -type f -iname 'rexxsyslib.library' -print -qu
   echo "REXXMAST=${rexxmast_host:-MISSING}"
   echo "REXXSYSLIB=${rexxlib_host:-MISSING}"
   echo "NOTE=ARexx capability is observational only in M5.3a"
+  echo "M5_3A_BINARY=$NATIVE"
 } > "$OUT_DIR/arexx-capabilities.txt"
 
 cp "$NATIVE" "$aros_root/RexxTelnet"
 cp "$startup" "$startup.rexxtelnet-original"
 
-# Follow the known-good AmiNTP guest-execution pattern: record Which, a marker
-# immediately before launch, the program output/return code, and an after marker.
-# This distinguishes an executable/runtime failure from the TCP qualification
-# itself before changing any networking assumptions.
+# Follow the known-good AmiNTP guest-execution pattern while using the CI-only
+# ARexx-free RexxTelnet build. The networking, Telnet, terminal and Amiga
+# runtime paths are unchanged; only the classic ARexx port dependency is
+# stubbed for M5.3a. M5.3b qualifies the production ARexx path locally.
 cat > "$startup" <<'AROS_STARTUP'
 FailAt 21
 
@@ -135,7 +136,7 @@ observation=guest_tcp_evidence_incomplete
 if [[ -f "$started" && -f "$runtime_ready" && -f "$before_exec" && -f "$server_out" ]] \
    && grep -q 'ACCEPTED=1' "$server_out"; then
   status=PASS
-  observation=native_rexxtelnet_connected_via_bsdsocket
+  observation=native_rexxtelnet_connected_via_bsdsocket_without_arexx_dependency
 elif [[ -f "$after_exec" ]]; then
   observation=guest_rexxtelnet_returned_without_tcp_accept
 elif [[ -f "$before_exec" ]]; then
@@ -148,7 +149,8 @@ fi
   echo "MODEL=A1200"
   echo "KICKSTART=internal"
   echo "BSD_SOCKET_EMULATION=1"
-  echo "STARTUP_MODE=amintp_style_execution_evidence"
+  echo "STARTUP_MODE=amintp_style_arexx_free_tcp_qualification"
+  echo "M5_3A_BINARY=$NATIVE"
   echo "FS_UAE_EXIT=$rc"
   echo "OBSERVATION=$observation"
   echo "AREXX_QUALIFICATION=M5.3b_LOCAL_CLASSIC_AMIGAOS"
