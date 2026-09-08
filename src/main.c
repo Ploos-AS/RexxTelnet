@@ -1,18 +1,25 @@
-/*
- * RexxTelnet Amiga application entry point.
- *
- * M0 intentionally keeps AmigaOS-specific networking, terminal and ARexx
- * plumbing outside the host-testable Telnet protocol core.
- */
+#include <stdio.h>
+#include <stdlib.h>
 
-#include "telnet.h"
+#include "amiga_runtime.h"
 
-int main(void)
+int main(int argc, char **argv)
 {
-    struct rt_telnet_parser parser;
+    unsigned long port = 23u;
 
-    rt_telnet_init(&parser);
+    if (argc < 2 || argc > 3) {
+        fprintf(stderr, "Usage: RexxTelnet host [port]\n");
+        return 5;
+    }
 
-    /* M1 will add application lifecycle and bsdsocket.library integration. */
-    return 0;
+    if (argc == 3) {
+        char *end = NULL;
+        port = strtoul(argv[2], &end, 10);
+        if (end == argv[2] || *end != '\0' || port == 0u || port > 65535u) {
+            fprintf(stderr, "RexxTelnet: invalid port\n");
+            return 5;
+        }
+    }
+
+    return rt_amiga_run(argv[1], (unsigned short)port);
 }
