@@ -33,7 +33,7 @@ jobs:
       - name: Gate 3 - native Bebbo RexxTelnet build
         run: bash ci/fs-uae/build-native.sh
 
-      - name: Gate 4 - AROS guest RexxTelnet and ARexx runtime
+      - name: Gate 4 - M5.3a AROS guest TCP runtime
         run: bash ci/fs-uae/run-aros-guest-runtime.sh
 
       - name: Upload FS-UAE qualification evidence
