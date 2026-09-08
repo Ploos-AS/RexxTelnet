@@ -1,7 +1,7 @@
 CC ?= cc
 CFLAGS ?= -std=c89 -Wall -Wextra -Werror -pedantic -O2
 CPPFLAGS ?= -Isrc
-TEST_BINS := tests/test_telnet tests/test_session tests/test_fragmentation tests/test_terminal tests/test_app_session
+TEST_BINS := tests/test_telnet tests/test_session tests/test_fragmentation tests/test_terminal tests/test_app_session tests/test_arexx_cmd
 
 .PHONY: all check clean
 
@@ -22,12 +22,16 @@ tests/test_terminal: tests/test_terminal.c src/terminal.c src/terminal.h src/tel
 tests/test_app_session: tests/test_app_session.c src/app_session.c src/app_session.h src/session.c src/session.h src/terminal.c src/terminal.h src/telnet.c src/telnet.h src/transport.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/test_app_session.c src/app_session.c src/session.c src/terminal.c src/telnet.c
 
+tests/test_arexx_cmd: tests/test_arexx_cmd.c src/arexx_cmd.c src/arexx_cmd.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/test_arexx_cmd.c src/arexx_cmd.c
+
 check: $(TEST_BINS)
 	./tests/test_telnet
 	./tests/test_session
 	./tests/test_fragmentation
 	./tests/test_terminal
 	./tests/test_app_session
+	./tests/test_arexx_cmd
 
 clean:
 	rm -f $(TEST_BINS)
