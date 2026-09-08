@@ -9,6 +9,7 @@ struct fake_state {
     unsigned short rows;
     char sent[512];
     size_t sent_len;
+    char rx[256];
 };
 
 static int f_connected(void *ctx) { return ((struct fake_state *)ctx)->connected; }
@@ -32,6 +33,28 @@ static unsigned short f_columns(void *ctx) { return ((struct fake_state *)ctx)->
 static unsigned short f_rows(void *ctx) { return ((struct fake_state *)ctx)->rows; }
 static int f_set_columns(void *ctx, unsigned short v) { ((struct fake_state *)ctx)->columns = v; return 0; }
 static int f_set_rows(void *ctx, unsigned short v) { ((struct fake_state *)ctx)->rows = v; return 0; }
+static size_t f_peek(void *ctx, char *out, size_t out_size)
+{
+    struct fake_state *s = (struct fake_state *)ctx;
+    size_t n = strlen(s->rx);
+    if (n >= out_size) n = out_size - 1u;
+    memcpy(out, s->rx, n);
+    out[n] = '\0';
+    return n;
+}
+static size_t f_read(void *ctx, char *out, size_t out_size)
+{
+    struct fake_state *s = (struct fake_state *)ctx;
+    size_t n = f_peek(ctx, out, out_size);
+    if (n != 0u) memmove(s->rx, s->rx + n, strlen(s->rx + n) + 1u);
+    return n;
+}
+static int f_waitfor(void *ctx, const char *text, unsigned long timeout)
+{
+    struct fake_state *s = (struct fake_state *)ctx;
+    (void)timeout;
+    return strstr(s->rx, text) != NULL ? 1 : 0;
+}
 
 static int expect(int cond, const char *name)
 {
@@ -47,8 +70,10 @@ int main(void)
     int ok = 1;
 
     memset(&s, 0, sizeof(s));
+    memset(&ops, 0, sizeof(ops));
     s.columns = 80u;
     s.rows = 25u;
+    strcpy(s.rx, "banner login:");
     ops.is_connected = f_connected;
     ops.connect = f_connect;
     ops.disconnect = f_disconnect;
@@ -57,6 +82,9 @@ int main(void)
     ops.rows = f_rows;
     ops.set_columns = f_set_columns;
     ops.set_rows = f_set_rows;
+    ops.peek = f_peek;
+    ops.read = f_read;
+    ops.waitfor = f_waitfor;
 
     rt_arexx_dispatch("STATUS", &ops, &s, &r);
     ok &= expect(r.rc == 0 && strcmp(r.result, "DISCONNECTED") == 0, "status disconnected");
@@ -66,6 +94,18 @@ int main(void)
 
     rt_arexx_dispatch("SENDLINE hello world", &ops, &s, &r);
     ok &= expect(r.rc == 0 && s.sent_len == 13u && memcmp(s.sent, "hello world\r\n", 13u) == 0, "sendline");
+
+    rt_arexx_dispatch("WAITFOR \"login:\" 3", &ops, &s, &r);
+    ok &= expect(r.rc == 0 && strcmp(r.result, "MATCH") == 0, "waitfor match");
+
+    rt_arexx_dispatch("PEEK", &ops, &s, &r);
+    ok &= expect(r.rc == 0 && strcmp(r.result, "banner login:") == 0, "peek");
+
+    rt_arexx_dispatch("READ", &ops, &s, &r);
+    ok &= expect(r.rc == 0 && strcmp(r.result, "banner login:") == 0, "read");
+
+    rt_arexx_dispatch("PEEK", &ops, &s, &r);
+    ok &= expect(r.rc == 0 && strcmp(r.result, "") == 0, "peek empty");
 
     rt_arexx_dispatch("GET columns", &ops, &s, &r);
     ok &= expect(r.rc == 0 && strcmp(r.result, "80") == 0, "get columns");
