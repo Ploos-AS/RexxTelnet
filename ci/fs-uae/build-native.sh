@@ -28,6 +28,7 @@ docker run --rm \
     src/telnet.c \
     src/terminal.c \
     src/terminal_amiga.c \
+    src/transport_common.c \
     src/transport_amiga.c
 
 cp RexxTelnet "$OUT_DIR/RexxTelnet"
