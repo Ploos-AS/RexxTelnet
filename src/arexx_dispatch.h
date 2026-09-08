@@ -15,6 +15,10 @@ struct rt_arexx_ops {
     size_t (*peek)(void *ctx, char *output, size_t output_size);
     size_t (*read)(void *ctx, char *output, size_t output_size);
     int (*waitfor)(void *ctx, const char *text, unsigned long timeout_seconds);
+    int (*capture_start)(void *ctx, const char *path);
+    int (*capture_stop)(void *ctx);
+    int (*get_property)(void *ctx, const char *name,
+                        char *output, size_t output_size);
 };
 
 struct rt_arexx_result {
