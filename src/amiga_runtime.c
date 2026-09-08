@@ -47,6 +47,7 @@ static void rt_amiga_emit_text(void *opaque, unsigned char byte)
 }
 
 static void rt_amiga_emit_control(void *opaque,
+                                  unsigned char prefix,
                                   unsigned char command,
                                   const unsigned int *params,
                                   unsigned char param_count)
@@ -58,12 +59,18 @@ static void rt_amiga_emit_control(void *opaque,
     unsigned char i;
 
     sequence[pos++] = 27;
-    sequence[pos++] = '[';
-    for (i = 0u; i < param_count && pos < (int)sizeof(sequence) - 8; ++i) {
-        if (i != 0u) sequence[pos++] = ';';
-        pos += sprintf(sequence + pos, "%u", params[i]);
+    if (prefix == RT_TERM_PREFIX_ESC) {
+        sequence[pos++] = (char)command;
+    } else {
+        sequence[pos++] = '[';
+        if (prefix != RT_TERM_PREFIX_NONE)
+            sequence[pos++] = (char)prefix;
+        for (i = 0u; i < param_count && pos < (int)sizeof(sequence) - 8; ++i) {
+            if (i != 0u) sequence[pos++] = ';';
+            pos += sprintf(sequence + pos, "%u", params[i]);
+        }
+        sequence[pos++] = (char)command;
     }
-    sequence[pos++] = (char)command;
 
     if (rt_terminal_amiga_write((const unsigned char *)sequence,
                                 (unsigned long)pos) != (long)pos)
@@ -331,6 +338,7 @@ int rt_amiga_run(const char *host, unsigned short port)
         if (running && rt_terminal_amiga_has_input()) {
             long count = rt_terminal_amiga_read(input, sizeof(input));
             long i;
+            long start = 0;
             did_work = 1;
 
             if (count <= 0) {
@@ -338,13 +346,17 @@ int rt_amiga_run(const char *host, unsigned short port)
             } else {
                 for (i = 0; i < count; ++i) {
                     if (input[i] == 29u) {
+                        if (i > start && app.transport.connected &&
+                            rt_app_session_send_input(&app, input + start,
+                                                      (size_t)(i - start)) < 0)
+                            rt_app_session_disconnect(&app);
                         running = 0;
                         break;
                     }
                 }
-                if (running && app.transport.connected &&
-                    rt_app_session_send_input(&app, input,
-                                              (size_t)count) < 0)
+                if (running && count > start && app.transport.connected &&
+                    rt_app_session_send_input(&app, input + start,
+                                              (size_t)(count - start)) < 0)
                     rt_app_session_disconnect(&app);
             }
         }
