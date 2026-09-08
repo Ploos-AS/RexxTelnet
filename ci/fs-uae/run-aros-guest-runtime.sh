@@ -36,15 +36,33 @@ rexxlib_host="$(find "$aros_root" -type f -iname 'rexxsyslib.library' -print -qu
 cp "$NATIVE" "$aros_root/RexxTelnet"
 cp "$startup" "$startup.rexxtelnet-original"
 
-cat > "$startup" <<'EOF'
-SYS:C/Echo "M5_3A_GUEST_STARTED=1" >SYS:m5-3a-started.txt
-Run >NIL: SYS:RexxTelnet 127.0.0.1 2323
-SYS:C/Wait 8
-SYS:C/Echo "M5_3A_POST_LAUNCH=1" >SYS:m5-3a-post-launch.txt
-SYS:C/Execute SYS:S/Startup-Sequence.rexxtelnet-original
-EOF
+# Launch only after the normal AROS Startup-Sequence has initialized assigns,
+# handlers, preferences and user startup.  The previous harness launched at
+# the first line of Startup-Sequence, which was too early to prove a normal
+# application runtime environment.
+python3 - "$startup.rexxtelnet-original" "$startup" <<'PY'
+from pathlib import Path
+import sys
 
-rm -f "$aros_root/m5-3a-started.txt" "$aros_root/m5-3a-post-launch.txt"
+src = Path(sys.argv[1]).read_text()
+marker = 'If EXISTS "WANDERER:Wanderer"'
+if marker not in src:
+    raise SystemExit('WANDERER_START_MARKER_NOT_FOUND')
+probe = '''SYS:C/Echo "M5_3A_GUEST_STARTED=1" >SYS:m5-3a-started.txt
+Run <NIL: >SYS:m5-3a-rexxtelnet-output.txt SYS:RexxTelnet 127.0.0.1 2323
+SYS:C/Wait 8
+SYS:C/Status >SYS:m5-3a-status.txt
+SYS:C/Echo "M5_3A_POST_LAUNCH=1" >SYS:m5-3a-post-launch.txt
+
+'''
+Path(sys.argv[2]).write_text(src.replace(marker, probe + marker, 1))
+PY
+
+rm -f \
+  "$aros_root/m5-3a-started.txt" \
+  "$aros_root/m5-3a-post-launch.txt" \
+  "$aros_root/m5-3a-rexxtelnet-output.txt" \
+  "$aros_root/m5-3a-status.txt"
 
 cat > "$OUT_DIR/telnet-server.py" <<'PY'
 import socket
@@ -90,11 +108,13 @@ trap - EXIT
 
 started="$aros_root/m5-3a-started.txt"
 post_launch="$aros_root/m5-3a-post-launch.txt"
+run_output="$aros_root/m5-3a-rexxtelnet-output.txt"
+status_output="$aros_root/m5-3a-status.txt"
 server_out="$OUT_DIR/telnet-server.txt"
 status=FAIL
 observation=guest_tcp_evidence_incomplete
 
-if [[ -f "$started" && -f "$post_launch" && -f "$server_out" ]] \
+if [[ -f "$started" && -f "$server_out" ]] \
    && grep -q 'ACCEPTED=1' "$server_out"; then
   status=PASS
   observation=native_rexxtelnet_launched_and_connected_via_bsdsocket
@@ -111,7 +131,11 @@ fi
   echo "AREXX_QUALIFICATION=M5.3b_LOCAL_CLASSIC_AMIGAOS"
   echo "AROS_REXXMAST=${rexxmast_host:-MISSING}"
   echo "AROS_REXXSYSLIB=${rexxlib_host:-MISSING}"
+  echo "GUEST_STARTED=$([[ -f "$started" ]] && echo 1 || echo 0)"
+  echo "POST_LAUNCH=$([[ -f "$post_launch" ]] && echo 1 || echo 0)"
   if [[ -f "$server_out" ]]; then tr -d '\r' < "$server_out" | sed 's/^/SERVER_/' ; fi
+  if [[ -f "$run_output" ]]; then tr -d '\r' < "$run_output" | sed 's/^/REXXTELNET_OUTPUT_/' ; fi
+  if [[ -f "$status_output" ]]; then tr -d '\r' < "$status_output" | sed 's/^/GUEST_STATUS_/' ; fi
 } | tee "$OUT_DIR/result.txt"
 
 [[ "$status" == PASS ]]
