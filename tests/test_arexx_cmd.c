@@ -30,6 +30,14 @@ int main(void)
     require(strcmp(cmd.arg1, "hello") == 0, "sendline first token");
     require(strcmp(cmd.arg2, "world") == 0, "sendline tail");
 
+    require(rt_arexx_parse("WAITFOR \"login prompt:\" 10", &cmd) == 0,
+            "parse quoted waitfor");
+    require(strcmp(cmd.arg1, "login prompt:") == 0, "quoted waitfor text");
+    require(strcmp(cmd.arg2, "10") == 0, "quoted waitfor timeout");
+
+    require(rt_arexx_parse("WAITFOR \"unterminated", &cmd) == RT_AREXX_RC_ERROR,
+            "unterminated quote rejected");
+
     require(rt_arexx_parse("   ", &cmd) == RT_AREXX_RC_ERROR,
             "blank rejected");
 
