@@ -12,6 +12,9 @@ struct rt_arexx_ops {
     unsigned short (*rows)(void *ctx);
     int (*set_columns)(void *ctx, unsigned short value);
     int (*set_rows)(void *ctx, unsigned short value);
+    size_t (*peek)(void *ctx, char *output, size_t output_size);
+    size_t (*read)(void *ctx, char *output, size_t output_size);
+    int (*waitfor)(void *ctx, const char *text, unsigned long timeout_seconds);
 };
 
 struct rt_arexx_result {
