@@ -4,6 +4,9 @@
 #include <stddef.h>
 
 #define RT_TERM_MAX_PARAMS 4
+#define RT_TERM_PREFIX_NONE 0u
+#define RT_TERM_PREFIX_PRIVATE_QMARK ((unsigned char)'?')
+#define RT_TERM_PREFIX_ESC 27u
 
 struct rt_terminal {
     unsigned short columns;
@@ -11,6 +14,7 @@ struct rt_terminal {
     unsigned short cursor_x;
     unsigned short cursor_y;
     unsigned char esc_state;
+    unsigned char csi_prefix;
     unsigned int params[RT_TERM_MAX_PARAMS];
     unsigned char param_count;
     unsigned int current_param;
@@ -19,6 +23,7 @@ struct rt_terminal {
 
 typedef void (*rt_terminal_emit_cb)(void *ctx, unsigned char byte);
 typedef void (*rt_terminal_control_cb)(void *ctx,
+                                       unsigned char prefix,
                                        unsigned char command,
                                        const unsigned int *params,
                                        unsigned char param_count);
