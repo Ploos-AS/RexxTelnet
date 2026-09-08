@@ -7,7 +7,7 @@ NATIVE="build/fs-uae/native/RexxTelnet"
 mkdir -p "$OUT_DIR"
 
 fail() {
-  printf 'STATUS=FAIL\nGATE=M5_3_AROS_GUEST_RUNTIME\nREASON=%s\n' "$1" | tee "$OUT_DIR/result.txt"
+  printf 'STATUS=FAIL\nGATE=M5_3A_AROS_GUEST_TCP_RUNTIME\nREASON=%s\n' "$1" | tee "$OUT_DIR/result.txt"
   exit 1
 }
 
@@ -30,46 +30,21 @@ rexxlib_host="$(find "$aros_root" -type f -iname 'rexxsyslib.library' -print -qu
   echo "RX=${rx_host:-MISSING}"
   echo "REXXMAST=${rexxmast_host:-MISSING}"
   echo "REXXSYSLIB=${rexxlib_host:-MISSING}"
+  echo "NOTE=ARexx capability is observational only in M5.3a"
 } > "$OUT_DIR/arexx-capabilities.txt"
-
-[[ -n "$rx_host" ]] || fail "AROS_RX_NOT_FOUND"
-[[ -n "$rexxmast_host" ]] || fail "AROS_REXXMAST_NOT_FOUND"
-[[ -n "$rexxlib_host" ]] || fail "AROS_REXXSYSLIB_NOT_FOUND"
-
-amiga_path() {
-  local rel="${1#"$aros_root"/}"
-  printf 'SYS:%s' "$rel"
-}
-rx_amiga="$(amiga_path "$rx_host")"
-rexxmast_amiga="$(amiga_path "$rexxmast_host")"
 
 cp "$NATIVE" "$aros_root/RexxTelnet"
 cp "$startup" "$startup.rexxtelnet-original"
 
-cat > "$aros_root/m5_3.rexx" <<'EOF'
-ADDRESS REXXTELNET
-'STATUS'
-SAY 'STATUS=' RESULT
-'GET RXCAPACITY'
-SAY 'RXCAPACITY=' RESULT
-'GET RXBYTES'
-SAY 'RXBYTES=' RESULT
-'QUIT'
-SAY 'QUIT_RC=' RC
-EOF
-
-cat > "$startup" <<EOF
-SYS:C/Echo "M5_3_GUEST_STARTED=1" >SYS:m5-3-started.txt
-Run >NIL: $rexxmast_amiga
-SYS:C/Wait 2
+cat > "$startup" <<'EOF'
+SYS:C/Echo "M5_3A_GUEST_STARTED=1" >SYS:m5-3a-started.txt
 Run >NIL: SYS:RexxTelnet 127.0.0.1 2323
-SYS:C/Wait 3
-$rx_amiga SYS:m5_3.rexx >SYS:m5-3-arexx.txt
-SYS:C/Wait 2
+SYS:C/Wait 8
+SYS:C/Echo "M5_3A_POST_LAUNCH=1" >SYS:m5-3a-post-launch.txt
 SYS:C/Execute SYS:S/Startup-Sequence.rexxtelnet-original
 EOF
 
-rm -f "$aros_root/m5-3-started.txt" "$aros_root/m5-3-arexx.txt"
+rm -f "$aros_root/m5-3a-started.txt" "$aros_root/m5-3a-post-launch.txt"
 
 cat > "$OUT_DIR/telnet-server.py" <<'PY'
 import socket
@@ -84,8 +59,8 @@ s.settimeout(40)
 try:
     conn, addr = s.accept()
     out.write_text('ACCEPTED=1\nPEER=%s:%s\n' % addr)
-    conn.sendall(b'RexxTelnet M5.3 ready\r\n')
-    conn.settimeout(20)
+    conn.sendall(b'RexxTelnet M5.3a ready\r\n')
+    conn.settimeout(10)
     try:
         while conn.recv(1024):
             pass
@@ -107,36 +82,36 @@ sed "s|@AROS_ROOT@|$PWD/$aros_root|" ci/fs-uae/aros-guest.fs-uae > "$config"
 fs-uae --version > "$OUT_DIR/fs-uae-version.txt" 2>&1 || true
 
 set +e
-timeout 55s xvfb-run -a fs-uae "$config" > "$OUT_DIR/fs-uae.log" 2>&1
+timeout 45s xvfb-run -a fs-uae "$config" > "$OUT_DIR/fs-uae.log" 2>&1
 rc=$?
 set -e
 wait "$server_pid" 2>/dev/null || true
 trap - EXIT
 
-started="$aros_root/m5-3-started.txt"
-arexx_out="$aros_root/m5-3-arexx.txt"
+started="$aros_root/m5-3a-started.txt"
+post_launch="$aros_root/m5-3a-post-launch.txt"
 server_out="$OUT_DIR/telnet-server.txt"
 status=FAIL
-observation=guest_runtime_evidence_incomplete
+observation=guest_tcp_evidence_incomplete
 
-if [[ -f "$started" && -f "$arexx_out" && -f "$server_out" ]] \
-   && grep -q 'ACCEPTED=1' "$server_out" \
-   && grep -q 'STATUS=CONNECTED' "$arexx_out" \
-   && grep -q 'RXCAPACITY=4096' "$arexx_out"; then
+if [[ -f "$started" && -f "$post_launch" && -f "$server_out" ]] \
+   && grep -q 'ACCEPTED=1' "$server_out"; then
   status=PASS
-  observation=guest_connected_and_arexx_port_answered
+  observation=native_rexxtelnet_launched_and_connected_via_bsdsocket
 fi
 
 {
   echo "STATUS=$status"
-  echo "GATE=M5_3_AROS_GUEST_RUNTIME"
+  echo "GATE=M5_3A_AROS_GUEST_TCP_RUNTIME"
   echo "MODEL=A1200"
   echo "KICKSTART=internal"
   echo "BSD_SOCKET_EMULATION=1"
   echo "FS_UAE_EXIT=$rc"
   echo "OBSERVATION=$observation"
+  echo "AREXX_QUALIFICATION=M5.3b_LOCAL_CLASSIC_AMIGAOS"
+  echo "AROS_REXXMAST=${rexxmast_host:-MISSING}"
+  echo "AROS_REXXSYSLIB=${rexxlib_host:-MISSING}"
   if [[ -f "$server_out" ]]; then tr -d '\r' < "$server_out" | sed 's/^/SERVER_/' ; fi
-  if [[ -f "$arexx_out" ]]; then tr -d '\r' < "$arexx_out" | sed 's/^/AREXX_/' ; fi
 } | tee "$OUT_DIR/result.txt"
 
 [[ "$status" == PASS ]]
