@@ -12,14 +12,14 @@ permissions:
 jobs:
   aros-runtime-gates:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 
       - name: Install FS-UAE runtime tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y fs-uae xvfb curl lhasa unzip file
+          sudo apt-get install -y fs-uae xvfb curl lhasa unzip file p7zip-full
 
       - name: Host regression tests
         run: make check
@@ -32,6 +32,9 @@ jobs:
 
       - name: Gate 3 - native Bebbo RexxTelnet build
         run: bash ci/fs-uae/build-native.sh
+
+      - name: Gate 4 - AROS guest RexxTelnet and ARexx runtime
+        run: bash ci/fs-uae/run-aros-guest-runtime.sh
 
       - name: Upload FS-UAE qualification evidence
         if: always()
