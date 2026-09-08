@@ -110,7 +110,12 @@ int rt_arexx_port_process(struct rt_arexx_port *wrapper,
 
 struct rt_arexx_port { int unused; };
 
+#ifdef RT_M5_3A_NO_AREXX
+static struct rt_arexx_port rt_m5_3a_stub_port;
+struct rt_arexx_port *rt_arexx_port_open(void) { return &rt_m5_3a_stub_port; }
+#else
 struct rt_arexx_port *rt_arexx_port_open(void) { return NULL; }
+#endif
 void rt_arexx_port_close(struct rt_arexx_port *port) { (void)port; }
 unsigned long rt_arexx_port_signal_mask(const struct rt_arexx_port *port)
 { (void)port; return 0u; }
