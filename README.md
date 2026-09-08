@@ -22,19 +22,13 @@ The initial ARexx port name is:
 REXXTELNET
 ```
 
-## M0 status
+## Status
 
-M0 establishes the project foundation:
+- M0 foundation: complete
+- M1 TCP session core: implemented
+- M1.1 session integration/hardening: implemented
 
-- project scope and compatibility contract
-- architecture and milestone plan
-- Telnet protocol core skeleton
-- host-buildable parser tests
-- ARexx command contract
-- Amiga application skeleton
-- CI/static host qualification
-
-See [docs/M0.md](docs/M0.md).
+Current core capabilities include Telnet framing, deterministic option negotiation, IAC escaping, portable TCP transport interfaces, an Amiga `bsdsocket.library` backend, and a session pump that preserves parser state across receive boundaries.
 
 ## Planned ARexx surface
 
@@ -57,7 +51,7 @@ Host-side protocol tests:
 make check
 ```
 
-Amiga cross-build will be introduced as the platform layer is filled in. The production target remains `-m68000`.
+The production target remains `-m68000`.
 
 ## License
 
