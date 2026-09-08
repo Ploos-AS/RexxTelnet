@@ -177,15 +177,19 @@ void rt_arexx_dispatch(const char *line,
         else set_result(out, RT_AREXX_RC_ERROR, "WAIT FAILED");
     } else if (strcmp(cmd.name, "CAPTURE") == 0) {
         if (equals_ci(cmd.arg1, "STOP") && cmd.arg2[0] == '\0') {
+            int stop_rc;
             if (ops->capture_stop == NULL) { set_result(out, RT_AREXX_RC_ERROR, "UNAVAILABLE"); return; }
-            set_result(out, ops->capture_stop(ctx) == 0 ? RT_AREXX_RC_OK : RT_AREXX_RC_WARN,
-                       "CAPTURE STOPPED");
+            stop_rc = ops->capture_stop(ctx);
+            if (stop_rc == 0) set_result(out, RT_AREXX_RC_OK, "CAPTURE STOPPED");
+            else set_result(out, RT_AREXX_RC_WARN, "CAPTURE NOT ACTIVE");
         } else {
+            int start_rc;
             if (cmd.arg1[0] == '\0' || cmd.arg2[0] != '\0' || ops->capture_start == NULL) {
                 set_result(out, RT_AREXX_RC_ERROR, "SYNTAX"); return;
             }
-            set_result(out, ops->capture_start(ctx, cmd.arg1) == 0 ? RT_AREXX_RC_OK : RT_AREXX_RC_ERROR,
-                       "CAPTURE STARTED");
+            start_rc = ops->capture_start(ctx, cmd.arg1);
+            if (start_rc == 0) set_result(out, RT_AREXX_RC_OK, "CAPTURE STARTED");
+            else set_result(out, RT_AREXX_RC_ERROR, "CAPTURE FAILED");
         }
     } else if (strcmp(cmd.name, "GET") == 0) {
         if (equals_ci(cmd.arg1, "COLUMNS")) sprintf(buffer, "%u", (unsigned int)ops->columns(ctx));
