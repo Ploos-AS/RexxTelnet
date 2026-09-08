@@ -15,6 +15,9 @@ int rt_transport_connect(struct rt_transport *transport,
 long rt_transport_send(struct rt_transport *transport,
                        const unsigned char *data,
                        size_t len);
+long rt_transport_send_all(struct rt_transport *transport,
+                           const unsigned char *data,
+                           size_t len);
 long rt_transport_recv(struct rt_transport *transport,
                        unsigned char *data,
                        size_t len);
