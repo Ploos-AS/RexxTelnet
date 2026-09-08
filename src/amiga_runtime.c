@@ -268,12 +268,14 @@ int rt_amiga_run(const char *host, unsigned short port)
     int running = 1;
 
     if (host == NULL || port == 0u) return 20;
-    if (rt_terminal_amiga_open() != 0) return 20;
 
     rt_app_session_init(&app, 80u, 25u);
-    if (rt_app_session_connect(&app, host, port) != 0) {
-        rt_terminal_amiga_close();
+    if (rt_app_session_connect(&app, host, port) != 0)
         return 10;
+
+    if (rt_terminal_amiga_open() != 0) {
+        rt_app_session_disconnect(&app);
+        return 20;
     }
 
     arexx = rt_arexx_port_open();
