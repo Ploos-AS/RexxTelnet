@@ -1,6 +1,6 @@
 #include "arexx_amiga.h"
 
-#ifdef __AMIGA__
+#if defined(__AMIGA__) && !defined(RT_M5_3A_NO_AREXX)
 
 #include <exec/types.h>
 #include <exec/libraries.h>
