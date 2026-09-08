@@ -36,10 +36,10 @@ rexxlib_host="$(find "$aros_root" -type f -iname 'rexxsyslib.library' -print -qu
 cp "$NATIVE" "$aros_root/RexxTelnet"
 cp "$startup" "$startup.rexxtelnet-original"
 
-# M5.3a uses a minimal CI-only Startup-Sequence. Run #28 proved that probing
-# PIPE: with Dir can block on this AROS image, while all prior initialization
-# steps return. M5.3a does not need a background shell process, so launch the
-# native RexxTelnet executable in the foreground as the final startup command.
+# Follow the known-good AmiNTP guest-execution pattern: record Which, a marker
+# immediately before launch, the program output/return code, and an after marker.
+# This distinguishes an executable/runtime failure from the TCP qualification
+# itself before changing any networking assumptions.
 cat > "$startup" <<'AROS_STARTUP'
 FailAt 21
 
@@ -67,12 +67,14 @@ EndIf
 
 SYS:C/Automount >NIL:
 SYS:C/Mount >NIL: "DEVS:DOSDrivers/~((.#?)|(#?.info)|(#?.dbg))"
-
 SYS:C/Path "C:" "SYS:System" "S:" "SYS:Prefs" "SYS:Tools" "SYS:Utilities" QUIET
 
 SYS:C/Echo "M5_3A_RUNTIME_READY=1" >SYS:m5-3a-runtime-ready.txt
+SYS:C/Which RexxTelnet >SYS:m5-3a-which.txt
 SYS:C/Echo "M5_3A_BEFORE_EXEC=1" >SYS:m5-3a-before-exec.txt
-SYS:RexxTelnet 127.0.0.1 2323
+SYS:RexxTelnet 127.0.0.1 2323 >SYS:m5-3a-rexxtelnet-output.txt
+SYS:C/Echo $RC >SYS:m5-3a-rexxtelnet-rc.txt
+SYS:C/Echo "M5_3A_AFTER_EXEC=1" >SYS:m5-3a-after-exec.txt
 AROS_STARTUP
 
 rm -f "$aros_root"/m5-3a-*.txt
@@ -122,6 +124,10 @@ trap - EXIT
 started="$aros_root/m5-3a-started.txt"
 runtime_ready="$aros_root/m5-3a-runtime-ready.txt"
 before_exec="$aros_root/m5-3a-before-exec.txt"
+after_exec="$aros_root/m5-3a-after-exec.txt"
+which_out="$aros_root/m5-3a-which.txt"
+guest_rc="$aros_root/m5-3a-rexxtelnet-rc.txt"
+guest_output="$aros_root/m5-3a-rexxtelnet-output.txt"
 server_out="$OUT_DIR/telnet-server.txt"
 status=FAIL
 observation=guest_tcp_evidence_incomplete
@@ -129,7 +135,11 @@ observation=guest_tcp_evidence_incomplete
 if [[ -f "$started" && -f "$runtime_ready" && -f "$before_exec" && -f "$server_out" ]] \
    && grep -q 'ACCEPTED=1' "$server_out"; then
   status=PASS
-  observation=native_rexxtelnet_launched_foreground_and_connected_via_bsdsocket
+  observation=native_rexxtelnet_connected_via_bsdsocket
+elif [[ -f "$after_exec" ]]; then
+  observation=guest_rexxtelnet_returned_without_tcp_accept
+elif [[ -f "$before_exec" ]]; then
+  observation=guest_entered_rexxtelnet_but_did_not_return
 fi
 
 {
@@ -138,7 +148,7 @@ fi
   echo "MODEL=A1200"
   echo "KICKSTART=internal"
   echo "BSD_SOCKET_EMULATION=1"
-  echo "STARTUP_MODE=minimal_ci_foreground"
+  echo "STARTUP_MODE=amintp_style_execution_evidence"
   echo "FS_UAE_EXIT=$rc"
   echo "OBSERVATION=$observation"
   echo "AREXX_QUALIFICATION=M5.3b_LOCAL_CLASSIC_AMIGAOS"
@@ -147,6 +157,10 @@ fi
   echo "GUEST_STARTED=$([[ -f "$started" ]] && echo 1 || echo 0)"
   echo "RUNTIME_READY=$([[ -f "$runtime_ready" ]] && echo 1 || echo 0)"
   echo "BEFORE_EXEC=$([[ -f "$before_exec" ]] && echo 1 || echo 0)"
+  echo "AFTER_EXEC=$([[ -f "$after_exec" ]] && echo 1 || echo 0)"
+  if [[ -f "$which_out" ]]; then tr -d '\r' < "$which_out" | sed 's/^/GUEST_WHICH=/' ; fi
+  if [[ -f "$guest_rc" ]]; then tr -d '\r' < "$guest_rc" | sed 's/^/GUEST_RC=/' ; fi
+  if [[ -f "$guest_output" ]]; then tr -d '\r' < "$guest_output" | sed 's/^/GUEST_OUTPUT=/' ; fi
   if [[ -f "$server_out" ]]; then tr -d '\r' < "$server_out" | sed 's/^/SERVER_/' ; fi
 } | tee "$OUT_DIR/result.txt"
 
