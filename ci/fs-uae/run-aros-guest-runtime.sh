@@ -36,27 +36,39 @@ rexxlib_host="$(find "$aros_root" -type f -iname 'rexxsyslib.library' -print -qu
 cp "$NATIVE" "$aros_root/RexxTelnet"
 cp "$startup" "$startup.rexxtelnet-original"
 
-# Run the native probe at a deterministic point in normal AROS startup:
-# after assigns/path/datatypes and ConClip are initialized, but before the
-# optional RexxMast and desktop startup.  This avoids both the too-early
-# first-line launch and the too-late pre-Wanderer launch.
-python3 - "$startup.rexxtelnet-original" "$startup" <<'PY'
-from pathlib import Path
-import sys
+# M5.3a deliberately uses a minimal CI-only Startup-Sequence.  Full AROS
+# desktop startup has repeatedly blocked before the probe point and is not
+# part of what this gate needs to qualify.  Initialize only the basic DOS
+# environment needed by a normal CLI application, then launch RexxTelnet.
+cat > "$startup" <<'AROS_STARTUP'
+FailAt 21
 
-src = Path(sys.argv[1]).read_text()
-marker = 'Run <NIL: >NIL: QUIET ConClip\n'
-if marker not in src:
-    raise SystemExit('CONCLIP_START_MARKER_NOT_FOUND')
-probe = '''SYS:C/Echo "M5_3A_GUEST_STARTED=1" >SYS:m5-3a-started.txt
+SYS:C/Echo "M5_3A_GUEST_STARTED=1" >SYS:m5-3a-started.txt
+
+If NOT EXISTS "RAM:T"
+    SYS:C/MakeDir "RAM:T"
+EndIf
+If NOT EXISTS "RAM:ENV"
+    SYS:C/MakeDir "RAM:ENV"
+EndIf
+
+SYS:C/Assign "T:" "RAM:T"
+SYS:C/Assign "ENV:" "RAM:ENV"
+SYS:C/Assign "LIBS:" "SYS:Libs"
+SYS:C/Assign "LIBS:" "SYS:Classes" ADD
+SYS:C/Path "C:" "SYS:System" "S:" "SYS:Prefs" "SYS:Tools" "SYS:Utilities" QUIET
+
+If EXISTS "C:SetPatch"
+    C:SetPatch QUIET
+EndIf
+
 SYS:C/Echo "M5_3A_RUNTIME_READY=1" >SYS:m5-3a-runtime-ready.txt
 Run <NIL: >SYS:m5-3a-rexxtelnet-output.txt SYS:RexxTelnet 127.0.0.1 2323
 SYS:C/Wait 8
 SYS:C/Status >SYS:m5-3a-status.txt
 SYS:C/Echo "M5_3A_POST_LAUNCH=1" >SYS:m5-3a-post-launch.txt
-'''
-Path(sys.argv[2]).write_text(src.replace(marker, marker + probe, 1))
-PY
+SYS:C/Wait 60
+AROS_STARTUP
 
 rm -f \
   "$aros_root/m5-3a-started.txt" \
@@ -128,6 +140,7 @@ fi
   echo "MODEL=A1200"
   echo "KICKSTART=internal"
   echo "BSD_SOCKET_EMULATION=1"
+  echo "STARTUP_MODE=minimal_ci"
   echo "FS_UAE_EXIT=$rc"
   echo "OBSERVATION=$observation"
   echo "AREXX_QUALIFICATION=M5.3b_LOCAL_CLASSIC_AMIGAOS"
