@@ -17,6 +17,7 @@ struct rt_session {
     unsigned char remote_echo;
     unsigned char local_sga;
     unsigned char remote_sga;
+    unsigned char local_naws;
 };
 
 struct rt_reply {
