@@ -13,6 +13,11 @@ struct rt_amiga_display_ctx {
     int failed;
 };
 
+struct rt_amiga_arexx_ctx {
+    struct rt_app_session *app;
+    struct rt_amiga_display_ctx *display;
+};
+
 static void rt_amiga_emit_text(void *opaque, unsigned char byte)
 {
     struct rt_amiga_display_ctx *ctx =
@@ -44,45 +49,93 @@ static void rt_amiga_emit_control(void *opaque,
         ctx->failed = 1;
 }
 
+static struct rt_app_session *ar_app(void *opaque)
+{
+    return ((struct rt_amiga_arexx_ctx *)opaque)->app;
+}
+
 static int ar_is_connected(void *opaque)
 {
-    return ((struct rt_app_session *)opaque)->transport.connected;
+    return ar_app(opaque)->transport.connected;
 }
 
 static int ar_connect(void *opaque, const char *host, unsigned short port)
 {
-    return rt_app_session_connect((struct rt_app_session *)opaque, host, port);
+    return rt_app_session_connect(ar_app(opaque), host, port);
 }
 
 static void ar_disconnect(void *opaque)
 {
-    rt_app_session_disconnect((struct rt_app_session *)opaque);
+    rt_app_session_disconnect(ar_app(opaque));
 }
 
 static long ar_send(void *opaque, const unsigned char *data, size_t len)
 {
-    return rt_app_session_send_input((struct rt_app_session *)opaque, data, len);
+    return rt_app_session_send_input(ar_app(opaque), data, len);
 }
 
 static unsigned short ar_columns(void *opaque)
 {
-    return ((struct rt_app_session *)opaque)->terminal.columns;
+    return ar_app(opaque)->terminal.columns;
 }
 
 static unsigned short ar_rows(void *opaque)
 {
-    return ((struct rt_app_session *)opaque)->terminal.rows;
+    return ar_app(opaque)->terminal.rows;
 }
 
 static int ar_set_columns(void *opaque, unsigned short value)
 {
-    ((struct rt_app_session *)opaque)->terminal.columns = value;
+    ar_app(opaque)->terminal.columns = value;
     return 0;
 }
 
 static int ar_set_rows(void *opaque, unsigned short value)
 {
-    ((struct rt_app_session *)opaque)->terminal.rows = value;
+    ar_app(opaque)->terminal.rows = value;
+    return 0;
+}
+
+static size_t ar_peek(void *opaque, char *output, size_t output_size)
+{
+    return rt_rx_buffer_peek(&ar_app(opaque)->rx_buffer, output, output_size);
+}
+
+static size_t ar_read(void *opaque, char *output, size_t output_size)
+{
+    return rt_rx_buffer_read(&ar_app(opaque)->rx_buffer, output, output_size);
+}
+
+static int ar_waitfor(void *opaque, const char *text,
+                      unsigned long timeout_seconds)
+{
+    struct rt_amiga_arexx_ctx *ctx = (struct rt_amiga_arexx_ctx *)opaque;
+    struct rt_app_session *app = ctx->app;
+    unsigned long ticks = timeout_seconds * 50u;
+    unsigned long elapsed = 0u;
+
+    if (rt_rx_buffer_consume_through(&app->rx_buffer, text)) return 1;
+
+    while (elapsed < ticks) {
+        if (!app->transport.connected) return -1;
+
+        if (rt_transport_readable(&app->transport)) {
+            long rc = rt_app_session_pump(app,
+                                          rt_amiga_emit_text,
+                                          rt_amiga_emit_control,
+                                          ctx->display);
+            if (rc <= 0 || ctx->display->failed) {
+                rt_app_session_disconnect(app);
+                return -1;
+            }
+            if (rt_rx_buffer_consume_through(&app->rx_buffer, text))
+                return 1;
+        } else {
+            Delay(1L);
+            ++elapsed;
+        }
+    }
+
     return 0;
 }
 
@@ -90,6 +143,7 @@ int rt_amiga_run(const char *host, unsigned short port)
 {
     struct rt_app_session app;
     struct rt_amiga_display_ctx display;
+    struct rt_amiga_arexx_ctx arexx_ctx;
     struct rt_arexx_port *arexx;
     struct rt_arexx_ops arexx_ops;
     unsigned char input[64];
@@ -111,6 +165,10 @@ int rt_amiga_run(const char *host, unsigned short port)
         return 20;
     }
 
+    display.failed = 0;
+    arexx_ctx.app = &app;
+    arexx_ctx.display = &display;
+
     arexx_ops.is_connected = ar_is_connected;
     arexx_ops.connect = ar_connect;
     arexx_ops.disconnect = ar_disconnect;
@@ -119,15 +177,16 @@ int rt_amiga_run(const char *host, unsigned short port)
     arexx_ops.rows = ar_rows;
     arexx_ops.set_columns = ar_set_columns;
     arexx_ops.set_rows = ar_set_rows;
-
-    display.failed = 0;
+    arexx_ops.peek = ar_peek;
+    arexx_ops.read = ar_read;
+    arexx_ops.waitfor = ar_waitfor;
 
     while (running) {
         int did_work = 0;
 
         if (rt_arexx_port_pending(arexx)) {
             int quit_requested = 0;
-            if (rt_arexx_port_process(arexx, &arexx_ops, &app,
+            if (rt_arexx_port_process(arexx, &arexx_ops, &arexx_ctx,
                                       &quit_requested) < 0)
                 running = 0;
             if (quit_requested) running = 0;
@@ -141,9 +200,8 @@ int rt_amiga_run(const char *host, unsigned short port)
                                           rt_amiga_emit_control,
                                           &display);
             did_work = 1;
-            if (rc <= 0 || display.failed) {
+            if (rc <= 0 || display.failed)
                 rt_app_session_disconnect(&app);
-            }
         }
 
         if (running && rt_terminal_amiga_has_input()) {
