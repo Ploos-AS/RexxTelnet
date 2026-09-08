@@ -32,6 +32,7 @@ int rt_transport_connect(struct rt_transport *transport,
 
     if (transport == NULL || host == NULL || port == 0u) return -1;
     if (transport->connected) return -1;
+    if (transport->socket_fd >= 0) rt_transport_disconnect(transport);
 
     if (SocketBase == NULL) {
         SocketBase = OpenLibrary("bsdsocket.library", 4);
@@ -40,7 +41,10 @@ int rt_transport_connect(struct rt_transport *transport,
 
     entry = gethostbyname(host);
     if (entry == NULL || entry->h_addr_list == NULL ||
-        entry->h_addr_list[0] == NULL) return -1;
+        entry->h_addr_list[0] == NULL) {
+        rt_transport_disconnect(transport);
+        return -1;
+    }
 
     memset(&address, 0, sizeof(address));
     address.sin_family = AF_INET;
@@ -48,9 +52,13 @@ int rt_transport_connect(struct rt_transport *transport,
     memcpy(&address.sin_addr, entry->h_addr_list[0], sizeof(address.sin_addr));
 
     fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) return -1;
+    if (fd < 0) {
+        rt_transport_disconnect(transport);
+        return -1;
+    }
     if (connect(fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
         CloseSocket(fd);
+        rt_transport_disconnect(transport);
         return -1;
     }
 
@@ -97,10 +105,15 @@ int rt_transport_readable(struct rt_transport *transport)
 
 void rt_transport_disconnect(struct rt_transport *transport)
 {
-    if (transport == NULL) return;
-    if (transport->socket_fd >= 0) CloseSocket(transport->socket_fd);
-    transport->socket_fd = -1;
-    transport->connected = 0;
+    if (transport != NULL) {
+        if (transport->socket_fd >= 0) CloseSocket(transport->socket_fd);
+        transport->socket_fd = -1;
+        transport->connected = 0;
+    }
+    if (SocketBase != NULL) {
+        CloseLibrary(SocketBase);
+        SocketBase = NULL;
+    }
 }
 
 #endif
