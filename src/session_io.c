@@ -74,10 +74,11 @@ long rt_session_io_send(struct rt_session_io *io,
     size_t encoded_len;
 
     if (io == NULL || data == NULL) return -1;
+    if (len == 0u) return 0;
     if (len > sizeof(encoded) / 2u) return -1;
 
     encoded_len = rt_telnet_encode_data(data, len, encoded, sizeof(encoded));
-    if (encoded_len == 0u && len != 0u) return -1;
+    if (encoded_len == 0u) return -1;
     return rt_transport_send(&io->transport, encoded, encoded_len);
 }
 
