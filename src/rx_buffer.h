@@ -8,6 +8,7 @@
 struct rt_rx_buffer {
     unsigned char data[RT_RX_BUFFER_SIZE];
     size_t len;
+    unsigned long dropped;
 };
 
 void rt_rx_buffer_init(struct rt_rx_buffer *buffer);
