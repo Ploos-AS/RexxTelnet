@@ -18,6 +18,7 @@ long rt_transport_send(struct rt_transport *transport,
 long rt_transport_recv(struct rt_transport *transport,
                        unsigned char *data,
                        size_t len);
+int rt_transport_readable(struct rt_transport *transport);
 void rt_transport_disconnect(struct rt_transport *transport);
 
 #endif
