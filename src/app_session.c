@@ -11,6 +11,7 @@ struct rt_app_pump_ctx {
 static void rt_app_on_data(void *opaque, unsigned char byte)
 {
     struct rt_app_pump_ctx *ctx = (struct rt_app_pump_ctx *)opaque;
+    rt_rx_buffer_append(&ctx->app->rx_buffer, &byte, 1u);
     rt_terminal_feed(&ctx->app->terminal, &byte, 1u,
                      ctx->on_text, ctx->on_control, ctx->user_ctx);
 }
@@ -66,6 +67,7 @@ void rt_app_session_init(struct rt_app_session *app,
     rt_transport_init(&app->transport);
     rt_session_init(&app->session);
     rt_terminal_init(&app->terminal, columns, rows);
+    rt_rx_buffer_init(&app->rx_buffer);
 }
 
 int rt_app_session_connect(struct rt_app_session *app,
@@ -74,6 +76,7 @@ int rt_app_session_connect(struct rt_app_session *app,
 {
     if (app == NULL) return -1;
     rt_session_init(&app->session);
+    rt_rx_buffer_init(&app->rx_buffer);
     return rt_transport_connect(&app->transport, host, port);
 }
 
