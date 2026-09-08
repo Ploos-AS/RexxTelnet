@@ -3,6 +3,7 @@
 
 #ifdef __AMIGA__
 
+#include <exec/types.h>
 #include <proto/dos.h>
 #include <dos/dos.h>
 
@@ -11,7 +12,8 @@ static BPTR rt_console = 0;
 int rt_terminal_amiga_open(void)
 {
     if (rt_console != 0) return 0;
-    rt_console = Open("CON:0/0/640/200/RexxTelnet/CLOSE/WAIT", MODE_OLDFILE);
+    rt_console = Open((CONST_STRPTR)"CON:0/0/640/200/RexxTelnet/CLOSE/WAIT",
+                      MODE_OLDFILE);
     return rt_console != 0 ? 0 : -1;
 }
 
