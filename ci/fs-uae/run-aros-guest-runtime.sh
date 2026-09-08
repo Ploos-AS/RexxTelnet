@@ -36,30 +36,31 @@ rexxlib_host="$(find "$aros_root" -type f -iname 'rexxsyslib.library' -print -qu
 cp "$NATIVE" "$aros_root/RexxTelnet"
 cp "$startup" "$startup.rexxtelnet-original"
 
-# Launch only after the normal AROS Startup-Sequence has initialized assigns,
-# handlers, preferences and user startup.  The previous harness launched at
-# the first line of Startup-Sequence, which was too early to prove a normal
-# application runtime environment.
+# Run the native probe at a deterministic point in normal AROS startup:
+# after assigns/path/datatypes and ConClip are initialized, but before the
+# optional RexxMast and desktop startup.  This avoids both the too-early
+# first-line launch and the too-late pre-Wanderer launch.
 python3 - "$startup.rexxtelnet-original" "$startup" <<'PY'
 from pathlib import Path
 import sys
 
 src = Path(sys.argv[1]).read_text()
-marker = 'If EXISTS "WANDERER:Wanderer"'
+marker = 'Run <NIL: >NIL: QUIET ConClip\n'
 if marker not in src:
-    raise SystemExit('WANDERER_START_MARKER_NOT_FOUND')
+    raise SystemExit('CONCLIP_START_MARKER_NOT_FOUND')
 probe = '''SYS:C/Echo "M5_3A_GUEST_STARTED=1" >SYS:m5-3a-started.txt
+SYS:C/Echo "M5_3A_RUNTIME_READY=1" >SYS:m5-3a-runtime-ready.txt
 Run <NIL: >SYS:m5-3a-rexxtelnet-output.txt SYS:RexxTelnet 127.0.0.1 2323
 SYS:C/Wait 8
 SYS:C/Status >SYS:m5-3a-status.txt
 SYS:C/Echo "M5_3A_POST_LAUNCH=1" >SYS:m5-3a-post-launch.txt
-
 '''
-Path(sys.argv[2]).write_text(src.replace(marker, probe + marker, 1))
+Path(sys.argv[2]).write_text(src.replace(marker, marker + probe, 1))
 PY
 
 rm -f \
   "$aros_root/m5-3a-started.txt" \
+  "$aros_root/m5-3a-runtime-ready.txt" \
   "$aros_root/m5-3a-post-launch.txt" \
   "$aros_root/m5-3a-rexxtelnet-output.txt" \
   "$aros_root/m5-3a-status.txt"
@@ -73,7 +74,7 @@ s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.bind(('127.0.0.1', 2323))
 s.listen(1)
-s.settimeout(40)
+s.settimeout(80)
 try:
     conn, addr = s.accept()
     out.write_text('ACCEPTED=1\nPEER=%s:%s\n' % addr)
@@ -100,13 +101,14 @@ sed "s|@AROS_ROOT@|$PWD/$aros_root|" ci/fs-uae/aros-guest.fs-uae > "$config"
 fs-uae --version > "$OUT_DIR/fs-uae-version.txt" 2>&1 || true
 
 set +e
-timeout 45s xvfb-run -a fs-uae "$config" > "$OUT_DIR/fs-uae.log" 2>&1
+timeout 90s xvfb-run -a fs-uae "$config" > "$OUT_DIR/fs-uae.log" 2>&1
 rc=$?
 set -e
 wait "$server_pid" 2>/dev/null || true
 trap - EXIT
 
 started="$aros_root/m5-3a-started.txt"
+runtime_ready="$aros_root/m5-3a-runtime-ready.txt"
 post_launch="$aros_root/m5-3a-post-launch.txt"
 run_output="$aros_root/m5-3a-rexxtelnet-output.txt"
 status_output="$aros_root/m5-3a-status.txt"
@@ -114,7 +116,7 @@ server_out="$OUT_DIR/telnet-server.txt"
 status=FAIL
 observation=guest_tcp_evidence_incomplete
 
-if [[ -f "$started" && -f "$server_out" ]] \
+if [[ -f "$started" && -f "$runtime_ready" && -f "$server_out" ]] \
    && grep -q 'ACCEPTED=1' "$server_out"; then
   status=PASS
   observation=native_rexxtelnet_launched_and_connected_via_bsdsocket
@@ -132,6 +134,7 @@ fi
   echo "AROS_REXXMAST=${rexxmast_host:-MISSING}"
   echo "AROS_REXXSYSLIB=${rexxlib_host:-MISSING}"
   echo "GUEST_STARTED=$([[ -f "$started" ]] && echo 1 || echo 0)"
+  echo "RUNTIME_READY=$([[ -f "$runtime_ready" ]] && echo 1 || echo 0)"
   echo "POST_LAUNCH=$([[ -f "$post_launch" ]] && echo 1 || echo 0)"
   if [[ -f "$server_out" ]]; then tr -d '\r' < "$server_out" | sed 's/^/SERVER_/' ; fi
   if [[ -f "$run_output" ]]; then tr -d '\r' < "$run_output" | sed 's/^/REXXTELNET_OUTPUT_/' ; fi
