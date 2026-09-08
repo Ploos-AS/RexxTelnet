@@ -19,6 +19,7 @@ void rt_session_init(struct rt_session *session)
         session->remote_echo = 0u;
         session->local_sga = 0u;
         session->remote_sga = 0u;
+        session->local_naws = 0u;
     }
 }
 
@@ -64,12 +65,17 @@ struct rt_reply rt_session_negotiate(struct rt_session *session,
             session->local_sga = 1u;
             return rt_reply3(RT_WILL, option);
         }
+        if (option == RT_TELNET_OPT_NAWS) {
+            session->local_naws = 1u;
+            return rt_reply3(RT_WILL, option);
+        }
         return rt_reply3(RT_WONT, option);
     }
 
     if (verb == RT_DONT) {
         if (option == RT_TELNET_OPT_BINARY) session->local_binary = 0u;
         if (option == RT_TELNET_OPT_SGA) session->local_sga = 0u;
+        if (option == RT_TELNET_OPT_NAWS) session->local_naws = 0u;
         return none;
     }
 
