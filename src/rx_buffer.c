@@ -4,7 +4,10 @@
 
 void rt_rx_buffer_init(struct rt_rx_buffer *buffer)
 {
-    if (buffer != NULL) buffer->len = 0u;
+    if (buffer != NULL) {
+        buffer->len = 0u;
+        buffer->dropped = 0u;
+    }
 }
 
 void rt_rx_buffer_append(struct rt_rx_buffer *buffer,
@@ -16,6 +19,7 @@ void rt_rx_buffer_append(struct rt_rx_buffer *buffer,
     if (buffer == NULL || data == NULL || len == 0u) return;
 
     if (len >= RT_RX_BUFFER_SIZE) {
+        buffer->dropped += (unsigned long)(buffer->len + len - RT_RX_BUFFER_SIZE);
         memcpy(buffer->data,
                data + (len - RT_RX_BUFFER_SIZE),
                RT_RX_BUFFER_SIZE);
@@ -25,6 +29,7 @@ void rt_rx_buffer_append(struct rt_rx_buffer *buffer,
 
     if (buffer->len + len > RT_RX_BUFFER_SIZE) {
         drop = buffer->len + len - RT_RX_BUFFER_SIZE;
+        buffer->dropped += (unsigned long)drop;
         memmove(buffer->data, buffer->data + drop, buffer->len - drop);
         buffer->len -= drop;
     }
