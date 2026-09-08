@@ -8,6 +8,7 @@
 struct capture {
     unsigned char text[64];
     size_t text_len;
+    unsigned char prefix;
     unsigned char command;
     unsigned int params[RT_TERM_MAX_PARAMS];
     unsigned char param_count;
@@ -29,12 +30,14 @@ static void capture_text(void *ctx, unsigned char byte)
 }
 
 static void capture_control(void *ctx,
+                            unsigned char prefix,
                             unsigned char command,
                             const unsigned int *params,
                             unsigned char param_count)
 {
     struct capture *capture = (struct capture *)ctx;
     unsigned char i;
+    capture->prefix = prefix;
     capture->command = command;
     capture->param_count = param_count;
     for (i = 0u; i < param_count && i < RT_TERM_MAX_PARAMS; ++i)
@@ -63,10 +66,38 @@ static void test_fragmented_csi(void)
     rt_terminal_init(&term, 80u, 24u);
     rt_terminal_feed(&term, a, sizeof(a), capture_text, capture_control, &capture);
     rt_terminal_feed(&term, b, sizeof(b), capture_text, capture_control, &capture);
+    require(capture.prefix == RT_TERM_PREFIX_NONE, "CSI prefix");
     require(capture.command == 'm', "CSI command");
     require(capture.param_count == 2u, "CSI param count");
     require(capture.params[0] == 31u && capture.params[1] == 42u,
             "CSI params");
+}
+
+static void test_private_csi(void)
+{
+    struct rt_terminal term;
+    struct capture capture;
+    const unsigned char data[] = {27u, '[', '?', '2', '5', 'l'};
+    memset(&capture, 0, sizeof(capture));
+    rt_terminal_init(&term, 80u, 24u);
+    rt_terminal_feed(&term, data, sizeof(data), capture_text, capture_control, &capture);
+    require(capture.prefix == RT_TERM_PREFIX_PRIVATE_QMARK, "private prefix");
+    require(capture.command == 'l', "private command");
+    require(capture.param_count == 1u && capture.params[0] == 25u,
+            "private params");
+}
+
+static void test_non_csi_escape(void)
+{
+    struct rt_terminal term;
+    struct capture capture;
+    const unsigned char data[] = {27u, '7'};
+    memset(&capture, 0, sizeof(capture));
+    rt_terminal_init(&term, 80u, 24u);
+    rt_terminal_feed(&term, data, sizeof(data), capture_text, capture_control, &capture);
+    require(capture.prefix == RT_TERM_PREFIX_ESC, "ESC prefix");
+    require(capture.command == '7', "ESC command");
+    require(capture.param_count == 0u, "ESC no params");
 }
 
 static void test_naws(void)
@@ -93,6 +124,8 @@ int main(void)
 {
     test_plain_text();
     test_fragmented_csi();
+    test_private_csi();
+    test_non_csi_escape();
     test_naws();
     test_naws_iac_escaping();
     puts("PASS: terminal core");
