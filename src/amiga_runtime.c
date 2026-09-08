@@ -130,10 +130,10 @@ static int ar_waitfor(void *opaque, const char *text,
             }
             if (rt_rx_buffer_consume_through(&app->rx_buffer, text))
                 return 1;
-        } else {
-            Delay(1L);
-            ++elapsed;
         }
+
+        Delay(1L);
+        ++elapsed;
     }
 
     return 0;
