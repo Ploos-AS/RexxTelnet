@@ -4,6 +4,7 @@
 
 #include <proto/dos.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "app_session.h"
 #include "arexx_amiga.h"
@@ -16,7 +17,26 @@ struct rt_amiga_display_ctx {
 struct rt_amiga_arexx_ctx {
     struct rt_app_session *app;
     struct rt_amiga_display_ctx *display;
+    BPTR capture_file;
+    char capture_path[256];
+    int capture_failed;
 };
+
+static int rt_equals_ci(const char *a, const char *b)
+{
+    unsigned char ca;
+    unsigned char cb;
+    while (*a != '\0' && *b != '\0') {
+        ca = (unsigned char)*a;
+        cb = (unsigned char)*b;
+        if (ca >= 'a' && ca <= 'z') ca = (unsigned char)(ca - 'a' + 'A');
+        if (cb >= 'a' && cb <= 'z') cb = (unsigned char)(cb - 'a' + 'A');
+        if (ca != cb) return 0;
+        ++a;
+        ++b;
+    }
+    return *a == '\0' && *b == '\0';
+}
 
 static void rt_amiga_emit_text(void *opaque, unsigned char byte)
 {
@@ -47,6 +67,20 @@ static void rt_amiga_emit_control(void *opaque,
     if (rt_terminal_amiga_write((const unsigned char *)sequence,
                                 (unsigned long)pos) != (long)pos)
         ctx->failed = 1;
+}
+
+static void rt_amiga_capture_data(void *opaque,
+                                  const unsigned char *data,
+                                  size_t len)
+{
+    struct rt_amiga_arexx_ctx *ctx = (struct rt_amiga_arexx_ctx *)opaque;
+    if (ctx == NULL || ctx->capture_file == 0 || data == NULL || len == 0u)
+        return;
+    if (Write(ctx->capture_file, (APTR)data, (LONG)len) != (LONG)len) {
+        Close(ctx->capture_file);
+        ctx->capture_file = 0;
+        ctx->capture_failed = 1;
+    }
 }
 
 static struct rt_app_session *ar_app(void *opaque)
@@ -139,6 +173,68 @@ static int ar_waitfor(void *opaque, const char *text,
     return 0;
 }
 
+static int ar_capture_start(void *opaque, const char *path)
+{
+    struct rt_amiga_arexx_ctx *ctx = (struct rt_amiga_arexx_ctx *)opaque;
+    BPTR file;
+    if (ctx == NULL || path == NULL || *path == '\0') return -1;
+    if (ctx->capture_file != 0) return -1;
+    file = Open((STRPTR)path, MODE_NEWFILE);
+    if (file == 0) return -1;
+    ctx->capture_file = file;
+    strncpy(ctx->capture_path, path, sizeof(ctx->capture_path) - 1u);
+    ctx->capture_path[sizeof(ctx->capture_path) - 1u] = '\0';
+    ctx->capture_failed = 0;
+    return 0;
+}
+
+static int ar_capture_stop(void *opaque)
+{
+    struct rt_amiga_arexx_ctx *ctx = (struct rt_amiga_arexx_ctx *)opaque;
+    if (ctx == NULL || ctx->capture_file == 0) return 1;
+    Close(ctx->capture_file);
+    ctx->capture_file = 0;
+    return 0;
+}
+
+static int ar_get_property(void *opaque, const char *name,
+                           char *output, size_t output_size)
+{
+    struct rt_amiga_arexx_ctx *ctx = (struct rt_amiga_arexx_ctx *)opaque;
+    struct rt_app_session *app = ctx->app;
+    const char *text = NULL;
+
+    if (output == NULL || output_size == 0u || name == NULL) return -1;
+    if (rt_equals_ci(name, "LOCAL_BINARY"))
+        text = app->session.local_binary ? "1" : "0";
+    else if (rt_equals_ci(name, "REMOTE_BINARY"))
+        text = app->session.remote_binary ? "1" : "0";
+    else if (rt_equals_ci(name, "REMOTE_ECHO"))
+        text = app->session.remote_echo ? "1" : "0";
+    else if (rt_equals_ci(name, "LOCAL_SGA"))
+        text = app->session.local_sga ? "1" : "0";
+    else if (rt_equals_ci(name, "REMOTE_SGA"))
+        text = app->session.remote_sga ? "1" : "0";
+    else if (rt_equals_ci(name, "LOCAL_NAWS"))
+        text = app->session.local_naws ? "1" : "0";
+    else if (rt_equals_ci(name, "CAPTURE"))
+        text = ctx->capture_file != 0 ? "ON" : "OFF";
+    else if (rt_equals_ci(name, "CAPTUREFILE"))
+        text = ctx->capture_path;
+    else if (rt_equals_ci(name, "CAPTUREERROR"))
+        text = ctx->capture_failed ? "1" : "0";
+    else if (rt_equals_ci(name, "RXBYTES")) {
+        sprintf(output, "%lu", (unsigned long)app->rx_buffer.len);
+        return 0;
+    } else {
+        return -1;
+    }
+
+    strncpy(output, text, output_size - 1u);
+    output[output_size - 1u] = '\0';
+    return 0;
+}
+
 int rt_amiga_run(const char *host, unsigned short port)
 {
     struct rt_app_session app;
@@ -168,6 +264,10 @@ int rt_amiga_run(const char *host, unsigned short port)
     display.failed = 0;
     arexx_ctx.app = &app;
     arexx_ctx.display = &display;
+    arexx_ctx.capture_file = 0;
+    arexx_ctx.capture_path[0] = '\0';
+    arexx_ctx.capture_failed = 0;
+    rt_app_session_set_data_observer(&app, rt_amiga_capture_data, &arexx_ctx);
 
     arexx_ops.is_connected = ar_is_connected;
     arexx_ops.connect = ar_connect;
@@ -180,6 +280,9 @@ int rt_amiga_run(const char *host, unsigned short port)
     arexx_ops.peek = ar_peek;
     arexx_ops.read = ar_read;
     arexx_ops.waitfor = ar_waitfor;
+    arexx_ops.capture_start = ar_capture_start;
+    arexx_ops.capture_stop = ar_capture_stop;
+    arexx_ops.get_property = ar_get_property;
 
     while (running) {
         int did_work = 0;
@@ -228,6 +331,7 @@ int rt_amiga_run(const char *host, unsigned short port)
         if (!did_work) Delay(1L);
     }
 
+    if (arexx_ctx.capture_file != 0) Close(arexx_ctx.capture_file);
     rt_arexx_port_close(arexx);
     rt_app_session_disconnect(&app);
     rt_terminal_amiga_close();
