@@ -55,6 +55,7 @@ static int f_waitfor(void *ctx, const char *text, unsigned long timeout)
 {
     struct fake_state *s = (struct fake_state *)ctx;
     (void)timeout;
+    if (strcmp(text, "cancel") == 0) return -2;
     return strstr(s->rx, text) != NULL ? 1 : 0;
 }
 static int f_capture_start(void *ctx, const char *path)
@@ -144,6 +145,10 @@ int main(void)
 
     rt_arexx_dispatch("WAITFOR \"login:\" 3", &ops, &s, &r);
     ok &= expect(r.rc == 0 && strcmp(r.result, "MATCH") == 0, "waitfor match");
+
+    rt_arexx_dispatch("WAITFOR cancel 3", &ops, &s, &r);
+    ok &= expect(r.rc == 5 && strcmp(r.result, "CANCELLED") == 0,
+                 "waitfor cancelled");
 
     rt_arexx_dispatch("PEEK", &ops, &s, &r);
     ok &= expect(r.rc == 0 && strcmp(r.result, "banner login:") == 0, "peek");
