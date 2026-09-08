@@ -2,6 +2,8 @@
 
 #ifdef __AMIGA__
 
+#include <exec/types.h>
+#include <exec/libraries.h>
 #include <exec/ports.h>
 #include <proto/exec.h>
 #include <proto/rexxsyslib.h>
@@ -10,7 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct Library *RexxSysBase = NULL;
+struct RxsLib *RexxSysBase;
 
 struct rt_arexx_port {
     struct MsgPort *port;
@@ -21,22 +23,27 @@ struct rt_arexx_port *rt_arexx_port_open(void)
     struct rt_arexx_port *wrapper;
     struct MsgPort *port;
 
-    if (FindPort("REXXTELNET") != NULL) return NULL;
+    if (FindPort((CONST_STRPTR)"REXXTELNET") != NULL) return NULL;
 
-    RexxSysBase = OpenLibrary("rexxsyslib.library", 0);
+    RexxSysBase = (struct RxsLib *)OpenLibrary((CONST_STRPTR)RXSNAME, 36);
     if (RexxSysBase == NULL) return NULL;
 
     wrapper = (struct rt_arexx_port *)malloc(sizeof(*wrapper));
-    if (wrapper == NULL) { CloseLibrary(RexxSysBase); RexxSysBase = NULL; return NULL; }
+    if (wrapper == NULL) {
+        CloseLibrary((struct Library *)RexxSysBase);
+        RexxSysBase = NULL;
+        return NULL;
+    }
 
     port = CreateMsgPort();
     if (port == NULL) {
         free(wrapper);
-        CloseLibrary(RexxSysBase); RexxSysBase = NULL;
+        CloseLibrary((struct Library *)RexxSysBase);
+        RexxSysBase = NULL;
         return NULL;
     }
 
-    port->mp_Node.ln_Name = "REXXTELNET";
+    port->mp_Node.ln_Name = (char *)"REXXTELNET";
     port->mp_Node.ln_Pri = 0;
     port->mp_Node.ln_Type = NT_MSGPORT;
     AddPort(port);
@@ -52,7 +59,10 @@ void rt_arexx_port_close(struct rt_arexx_port *wrapper)
         DeleteMsgPort(wrapper->port);
     }
     free(wrapper);
-    if (RexxSysBase != NULL) { CloseLibrary(RexxSysBase); RexxSysBase = NULL; }
+    if (RexxSysBase != NULL) {
+        CloseLibrary((struct Library *)RexxSysBase);
+        RexxSysBase = NULL;
+    }
 }
 
 unsigned long rt_arexx_port_signal_mask(const struct rt_arexx_port *wrapper)
@@ -86,7 +96,7 @@ int rt_arexx_port_process(struct rt_arexx_port *wrapper,
         msg->rm_Result2 = 0;
         if ((msg->rm_Action & RXFF_RESULT) != 0 && result.result[0] != '\0') {
             STRPTR arg = CreateArgstring((STRPTR)result.result,
-                                         (ULONG)strlen(result.result));
+                                         (LONG)strlen(result.result));
             if (arg != NULL) msg->rm_Result2 = (LONG)arg;
         }
         if (result.quit && quit_requested != NULL) *quit_requested = 1;
