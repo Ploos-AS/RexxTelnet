@@ -31,6 +31,8 @@ static void test_supported_remote_options(void)
     reply = rt_session_negotiate(&session, RT_WILL, RT_TELNET_OPT_ECHO);
     require_reply(reply, RT_DO, RT_TELNET_OPT_ECHO, "accept remote ECHO");
     require(session.remote_echo == 1u, "remote ECHO state");
+    reply = rt_session_negotiate(&session, RT_WILL, RT_TELNET_OPT_ECHO);
+    require(reply.len == 0u, "suppress duplicate remote ECHO");
 
     reply = rt_session_negotiate(&session, RT_WILL, RT_TELNET_OPT_BINARY);
     require_reply(reply, RT_DO, RT_TELNET_OPT_BINARY, "accept remote BINARY");
@@ -46,6 +48,13 @@ static void test_supported_local_options(void)
     reply = rt_session_negotiate(&session, RT_DO, RT_TELNET_OPT_SGA);
     require_reply(reply, RT_WILL, RT_TELNET_OPT_SGA, "accept local SGA");
     require(session.local_sga == 1u, "local SGA state");
+    reply = rt_session_negotiate(&session, RT_DO, RT_TELNET_OPT_SGA);
+    require(reply.len == 0u, "suppress duplicate local SGA");
+
+    reply = rt_session_negotiate(&session, RT_DO, RT_TELNET_OPT_NAWS);
+    require_reply(reply, RT_WILL, RT_TELNET_OPT_NAWS, "accept local NAWS");
+    reply = rt_session_negotiate(&session, RT_DO, RT_TELNET_OPT_NAWS);
+    require(reply.len == 0u, "suppress duplicate local NAWS");
 }
 
 static void test_unknown_options_are_rejected(void)
