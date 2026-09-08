@@ -174,6 +174,7 @@ void rt_arexx_dispatch(const char *line,
         wait_rc = ops->waitfor(ctx, cmd.arg1, timeout);
         if (wait_rc > 0) set_result(out, RT_AREXX_RC_OK, "MATCH");
         else if (wait_rc == 0) set_result(out, RT_AREXX_RC_WARN, "TIMEOUT");
+        else if (wait_rc == -2) set_result(out, RT_AREXX_RC_WARN, "CANCELLED");
         else set_result(out, RT_AREXX_RC_ERROR, "WAIT FAILED");
     } else if (strcmp(cmd.name, "CAPTURE") == 0) {
         if (equals_ci(cmd.arg1, "STOP") && cmd.arg2[0] == '\0') {
