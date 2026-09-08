@@ -16,6 +16,14 @@ This harness mirrors the AmiNTP qualification pattern for RexxTelnet.
 
 `build-native.sh` uses the same digest-pinned Bebbo GCC container as AmiNTP and compiles RexxTelnet for `-m68000 -noixemul`. The produced binary must be recognized as an Amiga executable. Toolchain digest, `file` output and binary SHA-256 are preserved as evidence.
 
-These gates establish runner viability, AROS/FS-UAE boot viability and native-build viability. They do not yet prove that RexxTelnet, RexxMast, the `REXXTELNET` ARexx port, bsdsocket networking, Telnet negotiation or reconnect automation have executed inside the guest. That is the next runtime qualification layer.
+## Gate 4: M5.3a AROS guest TCP runtime
 
-All evidence is written below `build/fs-uae/` and uploaded by the workflow.
+`run-aros-guest-runtime.sh` downloads and extracts the current AROS m68k system image, injects the native RexxTelnet binary into the guest filesystem, enables FS-UAE `bsdsocket_library = 1`, starts RexxTelnet from the guest startup sequence, and requires a connection to a controlled host-side TCP listener.
+
+The AROS filesystem is inspected for `RX`, `RexxMast` and `rexxsyslib.library`, but those are observational only. The currently used public AROS image does not provide the full classic ARexx runtime needed to qualify the `REXXTELNET` port, so ARexx is intentionally not part of the automated AROS PASS condition.
+
+## M5.3b: local classic AmigaOS ARexx qualification
+
+ARexx is qualified separately under a local licensed/classic AmigaOS FS-UAE environment with RexxMast and `rexxsyslib.library` present. The fixed procedure and PASS criteria are in `docs/M5_3_QUALIFICATION.md`, with helpers under `ci/local/`.
+
+All automated evidence is written below `build/fs-uae/` and uploaded by the workflow.
