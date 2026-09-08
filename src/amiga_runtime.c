@@ -3,6 +3,7 @@
 #ifdef __AMIGA__
 
 #include <proto/dos.h>
+#include <proto/exec.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -151,7 +152,15 @@ static int ar_waitfor(void *opaque, const char *text,
     if (rt_rx_buffer_consume_through(&app->rx_buffer, text)) return 1;
 
     while (elapsed < ticks) {
+        ULONG signals;
+
         if (!app->transport.connected) return -1;
+
+        signals = SetSignal(0L, 0L);
+        if ((signals & SIGBREAKF_CTRL_C) != 0u) {
+            SetSignal(0L, SIGBREAKF_CTRL_C);
+            return -2;
+        }
 
         if (rt_transport_readable(&app->transport)) {
             long rc = rt_app_session_pump(app,
@@ -226,6 +235,12 @@ static int ar_get_property(void *opaque, const char *name,
     else if (rt_equals_ci(name, "RXBYTES")) {
         sprintf(output, "%lu", (unsigned long)app->rx_buffer.len);
         return 0;
+    } else if (rt_equals_ci(name, "RXDROPPED")) {
+        sprintf(output, "%lu", app->rx_buffer.dropped);
+        return 0;
+    } else if (rt_equals_ci(name, "RXCAPACITY")) {
+        sprintf(output, "%lu", (unsigned long)RT_RX_BUFFER_SIZE);
+        return 0;
     } else {
         return -1;
     }
@@ -287,7 +302,13 @@ int rt_amiga_run(const char *host, unsigned short port)
     while (running) {
         int did_work = 0;
 
-        if (rt_arexx_port_pending(arexx)) {
+        if ((SetSignal(0L, 0L) & SIGBREAKF_CTRL_C) != 0u) {
+            SetSignal(0L, SIGBREAKF_CTRL_C);
+            running = 0;
+            did_work = 1;
+        }
+
+        if (running && rt_arexx_port_pending(arexx)) {
             int quit_requested = 0;
             if (rt_arexx_port_process(arexx, &arexx_ops, &arexx_ctx,
                                       &quit_requested) < 0)
