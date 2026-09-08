@@ -1,5 +1,6 @@
 #include "arexx_dispatch.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +27,16 @@ static int parse_ushort(const char *s, unsigned short *value)
     return 1;
 }
 
+static int text_equal_ci(const char *a, const char *b)
+{
+    while (*a != '\0' && *b != '\0') {
+        if (toupper((unsigned char)*a) != toupper((unsigned char)*b)) return 0;
+        ++a;
+        ++b;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
 void rt_arexx_dispatch(const char *line,
                        const struct rt_arexx_ops *ops,
                        void *ctx,
@@ -48,35 +59,79 @@ void rt_arexx_dispatch(const char *line,
                    ops->is_connected(ctx) ? "CONNECTED" : "DISCONNECTED");
     } else if (strcmp(cmd.name, "CONNECT") == 0) {
         unsigned short port = 23u;
-        if (ops->is_connected(ctx)) { set_result(out, RT_AREXX_RC_WARN, "ALREADY CONNECTED"); return; }
-        if (cmd.arg1[0] == '\0' || (cmd.arg2[0] != '\0' && !parse_ushort(cmd.arg2, &port))) {
-            set_result(out, RT_AREXX_RC_ERROR, "SYNTAX"); return;
+        if (ops->is_connected(ctx)) {
+            set_result(out, RT_AREXX_RC_WARN, "ALREADY CONNECTED");
+            return;
         }
-        set_result(out, ops->connect(ctx, cmd.arg1, port) == 0 ? RT_AREXX_RC_OK : RT_AREXX_RC_ERROR,
-                   ops->is_connected(ctx) ? "CONNECTED" : "CONNECT FAILED");
+        if (cmd.arg1[0] == '\0' ||
+            (cmd.arg2[0] != '\0' && !parse_ushort(cmd.arg2, &port))) {
+            set_result(out, RT_AREXX_RC_ERROR, "SYNTAX");
+            return;
+        }
+        if (ops->connect(ctx, cmd.arg1, port) == 0)
+            set_result(out, RT_AREXX_RC_OK, "CONNECTED");
+        else
+            set_result(out, RT_AREXX_RC_ERROR, "CONNECT FAILED");
     } else if (strcmp(cmd.name, "DISCONNECT") == 0) {
-        if (!ops->is_connected(ctx)) { set_result(out, RT_AREXX_RC_WARN, "NOT CONNECTED"); return; }
-        ops->disconnect(ctx); set_result(out, RT_AREXX_RC_OK, "DISCONNECTED");
-    } else if (strcmp(cmd.name, "SEND") == 0 || strcmp(cmd.name, "SENDLINE") == 0) {
-        unsigned char sendbuf[RT_AREXX_ARG_MAX + 2];
-        if (!ops->is_connected(ctx)) { set_result(out, RT_AREXX_RC_WARN, "NOT CONNECTED"); return; }
+        if (!ops->is_connected(ctx)) {
+            set_result(out, RT_AREXX_RC_WARN, "NOT CONNECTED");
+            return;
+        }
+        ops->disconnect(ctx);
+        set_result(out, RT_AREXX_RC_OK, "DISCONNECTED");
+    } else if (strcmp(cmd.name, "SEND") == 0 ||
+               strcmp(cmd.name, "SENDLINE") == 0) {
+        unsigned char sendbuf[(RT_AREXX_ARG_MAX * 2) + 3];
+        if (!ops->is_connected(ctx)) {
+            set_result(out, RT_AREXX_RC_WARN, "NOT CONNECTED");
+            return;
+        }
         len = strlen(cmd.arg1);
         memcpy(sendbuf, cmd.arg1, len);
-        if (strcmp(cmd.name, "SENDLINE") == 0) { sendbuf[len++] = '\r'; sendbuf[len++] = '\n'; }
-        set_result(out, ops->send(ctx, sendbuf, len) >= 0 ? RT_AREXX_RC_OK : RT_AREXX_RC_ERROR,
-                   "OK");
+        if (cmd.arg2[0] != '\0') {
+            sendbuf[len++] = ' ';
+            memcpy(sendbuf + len, cmd.arg2, strlen(cmd.arg2));
+            len += strlen(cmd.arg2);
+        }
+        if (strcmp(cmd.name, "SENDLINE") == 0) {
+            sendbuf[len++] = '\r';
+            sendbuf[len++] = '\n';
+        }
+        if (ops->send(ctx, sendbuf, len) >= 0)
+            set_result(out, RT_AREXX_RC_OK, "OK");
+        else
+            set_result(out, RT_AREXX_RC_ERROR, "SEND FAILED");
     } else if (strcmp(cmd.name, "GET") == 0) {
-        if (strcmp(cmd.arg1, "COLUMNS") == 0) sprintf(buffer, "%u", (unsigned int)ops->columns(ctx));
-        else if (strcmp(cmd.arg1, "ROWS") == 0) sprintf(buffer, "%u", (unsigned int)ops->rows(ctx));
-        else { set_result(out, RT_AREXX_RC_ERROR, "UNKNOWN PROPERTY"); return; }
+        if (text_equal_ci(cmd.arg1, "COLUMNS"))
+            sprintf(buffer, "%u", (unsigned int)ops->columns(ctx));
+        else if (text_equal_ci(cmd.arg1, "ROWS"))
+            sprintf(buffer, "%u", (unsigned int)ops->rows(ctx));
+        else {
+            set_result(out, RT_AREXX_RC_ERROR, "UNKNOWN PROPERTY");
+            return;
+        }
         set_result(out, RT_AREXX_RC_OK, buffer);
     } else if (strcmp(cmd.name, "SET") == 0) {
-        if (!parse_ushort(cmd.arg2, &value)) { set_result(out, RT_AREXX_RC_ERROR, "SYNTAX"); return; }
-        if (strcmp(cmd.arg1, "COLUMNS") == 0) set_result(out, ops->set_columns(ctx, value) == 0 ? 0 : 10, "OK");
-        else if (strcmp(cmd.arg1, "ROWS") == 0) set_result(out, ops->set_rows(ctx, value) == 0 ? 0 : 10, "OK");
-        else set_result(out, RT_AREXX_RC_ERROR, "UNKNOWN PROPERTY");
+        if (!parse_ushort(cmd.arg2, &value)) {
+            set_result(out, RT_AREXX_RC_ERROR, "SYNTAX");
+            return;
+        }
+        if (text_equal_ci(cmd.arg1, "COLUMNS")) {
+            if (ops->set_columns(ctx, value) == 0)
+                set_result(out, RT_AREXX_RC_OK, "OK");
+            else
+                set_result(out, RT_AREXX_RC_ERROR, "SET FAILED");
+        } else if (text_equal_ci(cmd.arg1, "ROWS")) {
+            if (ops->set_rows(ctx, value) == 0)
+                set_result(out, RT_AREXX_RC_OK, "OK");
+            else
+                set_result(out, RT_AREXX_RC_ERROR, "SET FAILED");
+        } else {
+            set_result(out, RT_AREXX_RC_ERROR, "UNKNOWN PROPERTY");
+        }
     } else if (strcmp(cmd.name, "QUIT") == 0) {
-        set_result(out, RT_AREXX_RC_OK, "BYE"); out->quit = 1;
+        set_result(out, RT_AREXX_RC_OK, "BYE");
+        out->quit = 1;
     } else {
         set_result(out, RT_AREXX_RC_ERROR, "UNKNOWN COMMAND");
     }
