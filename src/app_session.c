@@ -22,18 +22,13 @@ static void rt_app_send_naws(struct rt_app_pump_ctx *ctx)
 {
     unsigned char naws[16];
     size_t len;
-    long written;
 
     len = rt_terminal_build_naws(ctx->app->terminal.columns,
                                  ctx->app->terminal.rows,
                                  naws, sizeof(naws));
-    if (len == 0u) {
+    if (len == 0u ||
+        rt_transport_send_all(&ctx->app->transport, naws, len) != (long)len)
         ctx->send_failed = 1;
-        return;
-    }
-
-    written = rt_transport_send(&ctx->app->transport, naws, len);
-    if (written != (long)len) ctx->send_failed = 1;
 }
 
 static void rt_app_on_negotiation(void *opaque,
@@ -43,18 +38,15 @@ static void rt_app_on_negotiation(void *opaque,
     struct rt_app_pump_ctx *ctx = (struct rt_app_pump_ctx *)opaque;
     struct rt_reply reply;
     unsigned char had_naws;
-    long written;
 
     had_naws = ctx->app->session.local_naws;
     reply = rt_session_negotiate(&ctx->app->session, verb, option);
 
-    if (reply.len != 0u) {
-        written = rt_transport_send(&ctx->app->transport,
-                                    reply.bytes, reply.len);
-        if (written != (long)reply.len) {
-            ctx->send_failed = 1;
-            return;
-        }
+    if (reply.len != 0u &&
+        rt_transport_send_all(&ctx->app->transport,
+                              reply.bytes, reply.len) != (long)reply.len) {
+        ctx->send_failed = 1;
+        return;
     }
 
     if (!had_naws && ctx->app->session.local_naws)
@@ -88,6 +80,8 @@ int rt_app_session_connect(struct rt_app_session *app,
                            unsigned short port)
 {
     if (app == NULL) return -1;
+    if (app->transport.socket_fd >= 0 || app->transport.connected)
+        rt_transport_disconnect(&app->transport);
     rt_session_init(&app->session);
     rt_rx_buffer_init(&app->rx_buffer);
     return rt_transport_connect(&app->transport, host, port);
@@ -107,7 +101,7 @@ long rt_app_session_send_input(struct rt_app_session *app,
     encoded_len = rt_telnet_encode_data(data, len,
                                         encoded, sizeof(encoded));
     if (encoded_len == 0u) return -1;
-    return rt_transport_send(&app->transport, encoded, encoded_len);
+    return rt_transport_send_all(&app->transport, encoded, encoded_len);
 }
 
 long rt_app_session_pump(struct rt_app_session *app,
@@ -122,7 +116,12 @@ long rt_app_session_pump(struct rt_app_session *app,
     if (app == NULL) return -1;
 
     received = rt_transport_recv(&app->transport, input, sizeof(input));
-    if (received <= 0) return received;
+    if (received <= 0) {
+        if (app->transport.socket_fd >= 0 || app->transport.connected)
+            rt_transport_disconnect(&app->transport);
+        rt_session_init(&app->session);
+        return received;
+    }
 
     pump.app = app;
     pump.on_text = on_text;
@@ -133,7 +132,11 @@ long rt_app_session_pump(struct rt_app_session *app,
     rt_telnet_feed(&app->session.parser, input, (size_t)received,
                    rt_app_on_data, rt_app_on_negotiation, &pump);
 
-    if (pump.send_failed) return -1;
+    if (pump.send_failed) {
+        rt_transport_disconnect(&app->transport);
+        rt_session_init(&app->session);
+        return -1;
+    }
     return received;
 }
 
