@@ -29,20 +29,21 @@ struct rt_reply rt_session_negotiate(struct rt_session *session,
 {
     struct rt_reply none = {{0u, 0u, 0u}, 0u};
 
-    if (session == NULL) {
-        return none;
-    }
+    if (session == NULL) return none;
 
     if (verb == RT_WILL) {
         if (option == RT_TELNET_OPT_BINARY) {
+            if (session->remote_binary) return none;
             session->remote_binary = 1u;
             return rt_reply3(RT_DO, option);
         }
         if (option == RT_TELNET_OPT_ECHO) {
+            if (session->remote_echo) return none;
             session->remote_echo = 1u;
             return rt_reply3(RT_DO, option);
         }
         if (option == RT_TELNET_OPT_SGA) {
+            if (session->remote_sga) return none;
             session->remote_sga = 1u;
             return rt_reply3(RT_DO, option);
         }
@@ -58,14 +59,17 @@ struct rt_reply rt_session_negotiate(struct rt_session *session,
 
     if (verb == RT_DO) {
         if (option == RT_TELNET_OPT_BINARY) {
+            if (session->local_binary) return none;
             session->local_binary = 1u;
             return rt_reply3(RT_WILL, option);
         }
         if (option == RT_TELNET_OPT_SGA) {
+            if (session->local_sga) return none;
             session->local_sga = 1u;
             return rt_reply3(RT_WILL, option);
         }
         if (option == RT_TELNET_OPT_NAWS) {
+            if (session->local_naws) return none;
             session->local_naws = 1u;
             return rt_reply3(RT_WILL, option);
         }
