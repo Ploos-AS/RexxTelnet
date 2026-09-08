@@ -76,10 +76,11 @@ static void on_text(void *opaque, unsigned char byte)
     if (capture->len < sizeof(capture->data)) capture->data[capture->len++] = byte;
 }
 
-static void on_control(void *opaque, unsigned char command,
+static void on_control(void *opaque, unsigned char prefix,
+                       unsigned char command,
                        const unsigned int *params, unsigned char count)
 {
-    (void)opaque; (void)command; (void)params; (void)count;
+    (void)opaque; (void)prefix; (void)command; (void)params; (void)count;
 }
 
 static void on_app_data(void *opaque, const unsigned char *data, size_t len)
