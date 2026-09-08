@@ -1,5 +1,6 @@
 #include "arexx_dispatch.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +14,16 @@ static void set_result(struct rt_arexx_result *out, int rc, const char *text)
     if (text == NULL) text = "";
     strncpy(out->result, text, sizeof(out->result) - 1u);
     out->result[sizeof(out->result) - 1u] = '\0';
+}
+
+static int equals_ci(const char *a, const char *b)
+{
+    while (*a != '\0' && *b != '\0') {
+        if (toupper((unsigned char)*a) != toupper((unsigned char)*b)) return 0;
+        ++a;
+        ++b;
+    }
+    return *a == '\0' && *b == '\0';
 }
 
 static int parse_ushort(const char *s, unsigned short *value)
@@ -113,14 +124,14 @@ void rt_arexx_dispatch(const char *line,
         else if (wait_rc == 0) set_result(out, RT_AREXX_RC_WARN, "TIMEOUT");
         else set_result(out, RT_AREXX_RC_ERROR, "WAIT FAILED");
     } else if (strcmp(cmd.name, "GET") == 0) {
-        if (strcmp(cmd.arg1, "COLUMNS") == 0) sprintf(buffer, "%u", (unsigned int)ops->columns(ctx));
-        else if (strcmp(cmd.arg1, "ROWS") == 0) sprintf(buffer, "%u", (unsigned int)ops->rows(ctx));
+        if (equals_ci(cmd.arg1, "COLUMNS")) sprintf(buffer, "%u", (unsigned int)ops->columns(ctx));
+        else if (equals_ci(cmd.arg1, "ROWS")) sprintf(buffer, "%u", (unsigned int)ops->rows(ctx));
         else { set_result(out, RT_AREXX_RC_ERROR, "UNKNOWN PROPERTY"); return; }
         set_result(out, RT_AREXX_RC_OK, buffer);
     } else if (strcmp(cmd.name, "SET") == 0) {
         if (!parse_ushort(cmd.arg2, &value)) { set_result(out, RT_AREXX_RC_ERROR, "SYNTAX"); return; }
-        if (strcmp(cmd.arg1, "COLUMNS") == 0) set_result(out, ops->set_columns(ctx, value) == 0 ? 0 : 10, "OK");
-        else if (strcmp(cmd.arg1, "ROWS") == 0) set_result(out, ops->set_rows(ctx, value) == 0 ? 0 : 10, "OK");
+        if (equals_ci(cmd.arg1, "COLUMNS")) set_result(out, ops->set_columns(ctx, value) == 0 ? 0 : 10, "OK");
+        else if (equals_ci(cmd.arg1, "ROWS")) set_result(out, ops->set_rows(ctx, value) == 0 ? 0 : 10, "OK");
         else set_result(out, RT_AREXX_RC_ERROR, "UNKNOWN PROPERTY");
     } else if (strcmp(cmd.name, "QUIT") == 0) {
         set_result(out, RT_AREXX_RC_OK, "BYE"); out->quit = 1;
