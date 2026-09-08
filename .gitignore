@@ -5,3 +5,4 @@ build/
 RexxTelnet
 tests/test_telnet
 tests/test_session
+tests/test_fragmentation

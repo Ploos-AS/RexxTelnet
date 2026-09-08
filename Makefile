@@ -1,7 +1,7 @@
 CC ?= cc
 CFLAGS ?= -std=c89 -Wall -Wextra -Werror -pedantic -O2
 CPPFLAGS ?= -Isrc
-TEST_BINS := tests/test_telnet tests/test_session
+TEST_BINS := tests/test_telnet tests/test_session tests/test_fragmentation
 
 .PHONY: all check clean
 
@@ -13,9 +13,13 @@ tests/test_telnet: tests/test_telnet.c src/telnet.c src/telnet.h
 tests/test_session: tests/test_session.c src/session.c src/session.h src/telnet.c src/telnet.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/test_session.c src/session.c src/telnet.c
 
+tests/test_fragmentation: tests/test_fragmentation.c src/telnet.c src/telnet.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/test_fragmentation.c src/telnet.c
+
 check: $(TEST_BINS)
 	./tests/test_telnet
 	./tests/test_session
+	./tests/test_fragmentation
 
 clean:
 	rm -f $(TEST_BINS)
