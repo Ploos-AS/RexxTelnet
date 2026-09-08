@@ -11,3 +11,4 @@ tests/test_app_session
 tests/test_arexx_cmd
 tests/test_arexx_dispatch
 tests/test_rx_buffer
+tests/test_transport_common
