@@ -7,9 +7,11 @@ struct fake_state {
     int connected;
     unsigned short columns;
     unsigned short rows;
-    char sent[512];
+    unsigned char sent[512];
     size_t sent_len;
     char rx[256];
+    int capture;
+    char capture_path[128];
 };
 
 static int f_connected(void *ctx) { return ((struct fake_state *)ctx)->connected; }
@@ -55,6 +57,37 @@ static int f_waitfor(void *ctx, const char *text, unsigned long timeout)
     (void)timeout;
     return strstr(s->rx, text) != NULL ? 1 : 0;
 }
+static int f_capture_start(void *ctx, const char *path)
+{
+    struct fake_state *s = (struct fake_state *)ctx;
+    if (s->capture) return -1;
+    s->capture = 1;
+    strncpy(s->capture_path, path, sizeof(s->capture_path) - 1u);
+    s->capture_path[sizeof(s->capture_path) - 1u] = '\0';
+    return 0;
+}
+static int f_capture_stop(void *ctx)
+{
+    struct fake_state *s = (struct fake_state *)ctx;
+    if (!s->capture) return 1;
+    s->capture = 0;
+    return 0;
+}
+static int f_get_property(void *ctx, const char *name,
+                          char *out, size_t out_size)
+{
+    struct fake_state *s = (struct fake_state *)ctx;
+    const char *value;
+    if (strcmp(name, "CAPTURE") == 0 || strcmp(name, "capture") == 0)
+        value = s->capture ? "ON" : "OFF";
+    else if (strcmp(name, "LOCAL_NAWS") == 0)
+        value = "1";
+    else
+        return -1;
+    strncpy(out, value, out_size - 1u);
+    out[out_size - 1u] = '\0';
+    return 0;
+}
 
 static int expect(int cond, const char *name)
 {
@@ -68,6 +101,7 @@ int main(void)
     struct rt_arexx_ops ops;
     struct rt_arexx_result r;
     int ok = 1;
+    const unsigned char hex_expected[] = {0x00u, 0xffu, 0x1bu, 0x41u};
 
     memset(&s, 0, sizeof(s));
     memset(&ops, 0, sizeof(ops));
@@ -85,6 +119,9 @@ int main(void)
     ops.peek = f_peek;
     ops.read = f_read;
     ops.waitfor = f_waitfor;
+    ops.capture_start = f_capture_start;
+    ops.capture_stop = f_capture_stop;
+    ops.get_property = f_get_property;
 
     rt_arexx_dispatch("STATUS", &ops, &s, &r);
     ok &= expect(r.rc == 0 && strcmp(r.result, "DISCONNECTED") == 0, "status disconnected");
@@ -95,6 +132,16 @@ int main(void)
     rt_arexx_dispatch("SENDLINE hello world", &ops, &s, &r);
     ok &= expect(r.rc == 0 && s.sent_len == 13u && memcmp(s.sent, "hello world\r\n", 13u) == 0, "sendline");
 
+    rt_arexx_dispatch("SENDHEX 00 FF 1B 41", &ops, &s, &r);
+    ok &= expect(r.rc == 0 && s.sent_len == sizeof(hex_expected) &&
+                 memcmp(s.sent, hex_expected, sizeof(hex_expected)) == 0,
+                 "sendhex spaced");
+
+    rt_arexx_dispatch("SENDHEX 00ff1b41", &ops, &s, &r);
+    ok &= expect(r.rc == 0 && s.sent_len == sizeof(hex_expected) &&
+                 memcmp(s.sent, hex_expected, sizeof(hex_expected)) == 0,
+                 "sendhex compact");
+
     rt_arexx_dispatch("WAITFOR \"login:\" 3", &ops, &s, &r);
     ok &= expect(r.rc == 0 && strcmp(r.result, "MATCH") == 0, "waitfor match");
 
@@ -104,8 +151,21 @@ int main(void)
     rt_arexx_dispatch("READ", &ops, &s, &r);
     ok &= expect(r.rc == 0 && strcmp(r.result, "banner login:") == 0, "read");
 
-    rt_arexx_dispatch("PEEK", &ops, &s, &r);
-    ok &= expect(r.rc == 0 && strcmp(r.result, "") == 0, "peek empty");
+    rt_arexx_dispatch("CAPTURE RAM:session.log", &ops, &s, &r);
+    ok &= expect(r.rc == 0 && s.capture && strcmp(s.capture_path, "RAM:session.log") == 0,
+                 "capture start");
+
+    rt_arexx_dispatch("GET capture", &ops, &s, &r);
+    ok &= expect(r.rc == 0 && strcmp(r.result, "ON") == 0, "get capture");
+
+    rt_arexx_dispatch("CAPTURE STOP", &ops, &s, &r);
+    ok &= expect(r.rc == 0 && !s.capture, "capture stop");
+
+    rt_arexx_dispatch("GET CONNECTED", &ops, &s, &r);
+    ok &= expect(r.rc == 0 && strcmp(r.result, "1") == 0, "get connected");
+
+    rt_arexx_dispatch("GET LOCAL_NAWS", &ops, &s, &r);
+    ok &= expect(r.rc == 0 && strcmp(r.result, "1") == 0, "get session property");
 
     rt_arexx_dispatch("GET columns", &ops, &s, &r);
     ok &= expect(r.rc == 0 && strcmp(r.result, "80") == 0, "get columns");
