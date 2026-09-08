@@ -36,15 +36,18 @@ rexxlib_host="$(find "$aros_root" -type f -iname 'rexxsyslib.library' -print -qu
 cp "$NATIVE" "$aros_root/RexxTelnet"
 cp "$startup" "$startup.rexxtelnet-original"
 
-# M5.3a deliberately uses a minimal CI-only Startup-Sequence.  Full AROS
-# desktop startup has repeatedly blocked before the probe point and is not
-# part of what this gate needs to qualify.  Initialize only the basic DOS
-# environment needed by a normal CLI application, then launch RexxTelnet.
+# M5.3a uses a minimal CI-only Startup-Sequence. Keep the desktop out of the
+# qualification path, but retain the DOS handler initialization that AROS
+# performs before normal CLI use. In particular, Run depends on the mounted
+# DOS drivers / PIPE: path being available.
 cat > "$startup" <<'AROS_STARTUP'
 FailAt 21
 
 SYS:C/Echo "M5_3A_GUEST_STARTED=1" >SYS:m5-3a-started.txt
 
+If NOT EXISTS "RAM:Clipboards"
+    SYS:C/MakeDir "RAM:Clipboards"
+EndIf
 If NOT EXISTS "RAM:T"
     SYS:C/MakeDir "RAM:T"
 EndIf
@@ -53,17 +56,24 @@ If NOT EXISTS "RAM:ENV"
 EndIf
 
 SYS:C/Assign "T:" "RAM:T"
+SYS:C/Assign "CLIPS:" "RAM:Clipboards"
 SYS:C/Assign "ENV:" "RAM:ENV"
 SYS:C/Assign "LIBS:" "SYS:Libs"
 SYS:C/Assign "LIBS:" "SYS:Classes" ADD
-SYS:C/Path "C:" "SYS:System" "S:" "SYS:Prefs" "SYS:Tools" "SYS:Utilities" QUIET
 
 If EXISTS "C:SetPatch"
     C:SetPatch QUIET
 EndIf
 
+SYS:C/Automount >NIL:
+SYS:C/Mount >NIL: "DEVS:DOSDrivers/~((.#?)|(#?.info)|(#?.dbg))"
+SYS:C/Dir >NIL: "PIPE:"
+
+SYS:C/Path "C:" "SYS:System" "S:" "SYS:Prefs" "SYS:Tools" "SYS:Utilities" QUIET
+
 SYS:C/Echo "M5_3A_RUNTIME_READY=1" >SYS:m5-3a-runtime-ready.txt
 Run <NIL: >SYS:m5-3a-rexxtelnet-output.txt SYS:RexxTelnet 127.0.0.1 2323
+SYS:C/Echo "M5_3A_RUN_RETURNED=1" >SYS:m5-3a-run-returned.txt
 SYS:C/Wait 8
 SYS:C/Status >SYS:m5-3a-status.txt
 SYS:C/Echo "M5_3A_POST_LAUNCH=1" >SYS:m5-3a-post-launch.txt
@@ -73,6 +83,7 @@ AROS_STARTUP
 rm -f \
   "$aros_root/m5-3a-started.txt" \
   "$aros_root/m5-3a-runtime-ready.txt" \
+  "$aros_root/m5-3a-run-returned.txt" \
   "$aros_root/m5-3a-post-launch.txt" \
   "$aros_root/m5-3a-rexxtelnet-output.txt" \
   "$aros_root/m5-3a-status.txt"
@@ -121,6 +132,7 @@ trap - EXIT
 
 started="$aros_root/m5-3a-started.txt"
 runtime_ready="$aros_root/m5-3a-runtime-ready.txt"
+run_returned="$aros_root/m5-3a-run-returned.txt"
 post_launch="$aros_root/m5-3a-post-launch.txt"
 run_output="$aros_root/m5-3a-rexxtelnet-output.txt"
 status_output="$aros_root/m5-3a-status.txt"
@@ -140,7 +152,7 @@ fi
   echo "MODEL=A1200"
   echo "KICKSTART=internal"
   echo "BSD_SOCKET_EMULATION=1"
-  echo "STARTUP_MODE=minimal_ci"
+  echo "STARTUP_MODE=minimal_ci_with_dos_handlers"
   echo "FS_UAE_EXIT=$rc"
   echo "OBSERVATION=$observation"
   echo "AREXX_QUALIFICATION=M5.3b_LOCAL_CLASSIC_AMIGAOS"
@@ -148,6 +160,7 @@ fi
   echo "AROS_REXXSYSLIB=${rexxlib_host:-MISSING}"
   echo "GUEST_STARTED=$([[ -f "$started" ]] && echo 1 || echo 0)"
   echo "RUNTIME_READY=$([[ -f "$runtime_ready" ]] && echo 1 || echo 0)"
+  echo "RUN_RETURNED=$([[ -f "$run_returned" ]] && echo 1 || echo 0)"
   echo "POST_LAUNCH=$([[ -f "$post_launch" ]] && echo 1 || echo 0)"
   if [[ -f "$server_out" ]]; then tr -d '\r' < "$server_out" | sed 's/^/SERVER_/' ; fi
   if [[ -f "$run_output" ]]; then tr -d '\r' < "$run_output" | sed 's/^/REXXTELNET_OUTPUT_/' ; fi
