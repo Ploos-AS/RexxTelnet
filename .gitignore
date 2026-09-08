@@ -4,3 +4,4 @@ build/
 *.exe
 RexxTelnet
 tests/test_telnet
+tests/test_session
