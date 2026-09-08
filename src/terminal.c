@@ -10,6 +10,7 @@ static void rt_terminal_reset_csi(struct rt_terminal *term)
     term->param_count = 0u;
     term->current_param = 0u;
     term->current_param_set = 0;
+    term->csi_prefix = RT_TERM_PREFIX_NONE;
 }
 
 void rt_terminal_init(struct rt_terminal *term,
@@ -68,12 +69,18 @@ void rt_terminal_feed(struct rt_terminal *term,
                 term->esc_state = 2u;
                 rt_terminal_reset_csi(term);
             } else {
+                if (on_control != NULL)
+                    on_control(ctx, RT_TERM_PREFIX_ESC, ch, NULL, 0u);
                 term->esc_state = 0u;
             }
             continue;
         }
 
-        if (ch >= '0' && ch <= '9') {
+        if (term->csi_prefix == RT_TERM_PREFIX_NONE &&
+            term->param_count == 0u && !term->current_param_set &&
+            ch == '?') {
+            term->csi_prefix = RT_TERM_PREFIX_PRIVATE_QMARK;
+        } else if (ch >= '0' && ch <= '9') {
             term->current_param = term->current_param * 10u + (unsigned int)(ch - '0');
             term->current_param_set = 1;
         } else if (ch == ';') {
@@ -82,7 +89,8 @@ void rt_terminal_feed(struct rt_terminal *term,
             if (term->current_param_set || term->param_count > 0u)
                 rt_terminal_finish_param(term);
             if (on_control != NULL)
-                on_control(ctx, ch, term->params, term->param_count);
+                on_control(ctx, term->csi_prefix, ch,
+                           term->params, term->param_count);
             term->esc_state = 0u;
             rt_terminal_reset_csi(term);
         }
