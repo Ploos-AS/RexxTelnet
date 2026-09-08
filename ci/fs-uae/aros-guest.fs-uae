@@ -1,0 +1,8 @@
+[fs-uae]
+amiga_model = A1200
+kickstart_file = internal
+hard_drive_0 = @AROS_ROOT@
+bsdsocket_library = 1
+fullscreen = 0
+window_width = 640
+window_height = 512
