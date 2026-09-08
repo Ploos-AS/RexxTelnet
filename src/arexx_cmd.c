@@ -42,9 +42,18 @@ int rt_arexx_parse(const char *line, struct rt_arexx_command *out)
     while (*p != '\0' && isspace((unsigned char)*p)) ++p;
     if (*p == '\0') return RT_AREXX_RC_OK;
 
-    start = p;
-    while (*p != '\0' && !isspace((unsigned char)*p)) ++p;
-    copy_arg(out->arg1, sizeof(out->arg1), start, (size_t)(p - start));
+    if (*p == '"') {
+        ++p;
+        start = p;
+        while (*p != '\0' && *p != '"') ++p;
+        if (*p != '"') return RT_AREXX_RC_ERROR;
+        copy_arg(out->arg1, sizeof(out->arg1), start, (size_t)(p - start));
+        ++p;
+    } else {
+        start = p;
+        while (*p != '\0' && !isspace((unsigned char)*p)) ++p;
+        copy_arg(out->arg1, sizeof(out->arg1), start, (size_t)(p - start));
+    }
 
     while (*p != '\0' && isspace((unsigned char)*p)) ++p;
     if (*p != '\0') copy_arg(out->arg2, sizeof(out->arg2), p, strlen(p));
