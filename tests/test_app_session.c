@@ -85,6 +85,14 @@ static void on_control(void *opaque,
     (void)count;
 }
 
+static void on_app_data(void *opaque, const unsigned char *data, size_t len)
+{
+    struct output_capture *capture = (struct output_capture *)opaque;
+    if (capture->len + len > sizeof(capture->data)) return;
+    memcpy(capture->data + capture->len, data, len);
+    capture->len += len;
+}
+
 static void reset_fake(void)
 {
     fake_rx_len = 0u;
@@ -109,6 +117,32 @@ static void test_decoded_text_reaches_terminal(void)
             "pump text");
     require(capture.len == 2u, "text length");
     require(memcmp(capture.data, "Hi", 2u) == 0, "text data");
+}
+
+static void test_decoded_stream_observer(void)
+{
+    struct rt_app_session app;
+    struct output_capture terminal_capture;
+    struct output_capture data_capture;
+    const unsigned char input[] = {'A', RT_IAC, RT_IAC, 'B'};
+    const unsigned char expected[] = {'A', RT_IAC, 'B'};
+
+    reset_fake();
+    memset(&terminal_capture, 0, sizeof(terminal_capture));
+    memset(&data_capture, 0, sizeof(data_capture));
+    rt_app_session_init(&app, 80u, 24u);
+    rt_app_session_set_data_observer(&app, on_app_data, &data_capture);
+    require(rt_app_session_connect(&app, "example", 23u) == 0,
+            "connect observer");
+    memcpy(fake_rx, input, sizeof(input));
+    fake_rx_len = sizeof(input);
+
+    require(rt_app_session_pump(&app, on_text, on_control,
+                                &terminal_capture) == 4,
+            "pump observer");
+    require(data_capture.len == sizeof(expected), "observer length");
+    require(memcmp(data_capture.data, expected, sizeof(expected)) == 0,
+            "observer decoded bytes");
 }
 
 static void test_do_naws_sends_will_and_dimensions(void)
@@ -159,6 +193,7 @@ static void test_keyboard_iac_is_escaped(void)
 int main(void)
 {
     test_decoded_text_reaches_terminal();
+    test_decoded_stream_observer();
     test_do_naws_sends_will_and_dimensions();
     test_keyboard_iac_is_escaped();
     puts("PASS: app session integration");
